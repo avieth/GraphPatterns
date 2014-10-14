@@ -25,11 +25,12 @@ class (Functor m, Applicative m, Monad m) => GraphEngine m where
   type VertexId m :: *
 
   -- | Type of edge identifiers.
+  --   If your graph doesn't have edge identifiers, you can use the Void type
+  --   to make sure that nobody every calls getEdgeById.
   type EdgeId m :: *
 
   -- | Type of edge labels. If a given implementation of Graph does not support
-  --   this notion, you can use the type Void to ensure that nobody uses this
-  --   feature.
+  --   this notion, you should use the type ().
   type EdgeLabel m :: *
 
   -- | Type of vertices.
