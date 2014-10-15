@@ -72,20 +72,19 @@ type instance EdgeTraversalResult Both ManyToMany a = Many a
 type instance EdgeTraversalResult Both OneToMany a = Many a
 type instance EdgeTraversalResult Both OneToOne a = One a
 
-data Anomaly
-  = UnknownAnomaly
+data Anomaly l v = EdgeCardinalityAnomaly l v
     deriving (Show)
 
 class HandlesAnomaly a where
-  handleAnomaly :: (EdgeTraversalResult d (EdgeCardinality l) b ~ a b) => d -> l -> [b] -> Either Anomaly (a b)
+  handleAnomaly :: (GraphEngine m, EdgeTraversalResult d (EdgeCardinality l) b ~ a b) => d -> l -> Vertex m -> [b] -> Either (Anomaly l (Vertex m)) (a b)
 
 instance HandlesAnomaly One where
-  handleAnomaly _ _ [] = Right $ One Nothing
-  handleAnomaly _ _ [x] = Right $ One (Just x)
-  handleAnomaly _ _ _ = Left UnknownAnomaly
+  handleAnomaly _ _ _ [] = Right $ One Nothing
+  handleAnomaly _ _ _ [x] = Right $ One (Just x)
+  handleAnomaly _ l v _ = Left $ EdgeCardinalityAnomaly l v
 
 instance HandlesAnomaly Many where
-  handleAnomaly _ _ xs = Right $ Many xs
+  handleAnomaly _ _ _ xs = Right $ Many xs
 
 -- | Class to describe anything that can be used as a graph engine.
 --   We don't want to force it to be in IO, because pure Haskell graph
@@ -112,10 +111,10 @@ class (Functor m, Applicative m, Monad m) => GraphEngine m where
   data EngineEdgeLabel m :: *
 
   -- | Type of vertices.
-  type Vertex m :: *
+  data Vertex m :: *
 
   -- | Type of edges.
-  type Edge m :: *
+  data Edge m :: *
 
   -- | Must supply a Graph in order to get any information out of the
   --   GraphEngine. This function witnesses that it can be done.
@@ -138,7 +137,7 @@ class (Functor m, Applicative m, Monad m) => GraphEngine m where
     -- ^ The intention is that this guy is a value used only for its type a la
     -- singleton types... call it a singleton value?
     -> Vertex m
-    -> m (Either Anomaly (a (Edge m)))
+    -> m (Either (Anomaly l (Vertex m)) (a (Edge m)))
 
   -- | Given a Vertex, produce a list of all Edges incoming, i.e. with tail
   --   ends at the Vertex.
@@ -149,7 +148,7 @@ class (Functor m, Applicative m, Monad m) => GraphEngine m where
     -- ^ The intention is that this guy is a value used only for its type a la
     -- singleton types... call it a singleton value?
     -> Vertex m
-    -> m (Either Anomaly (a (Edge m)))
+    -> m (Either (Anomaly l (Vertex m)) (a (Edge m)))
 
 
 

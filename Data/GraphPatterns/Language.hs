@@ -34,7 +34,7 @@ incoming
      , EdgeTraversalResult Incoming (EdgeCardinality l) (Edge m) ~ a (Edge m))
   => l
   -> Vertex m
-  -> m (Either Anomaly (a (Edge m)))
+  -> m (Either (Anomaly l (Vertex m)) (a (Edge m)))
 incoming = getEdgesIn
 
 outgoing
@@ -43,7 +43,7 @@ outgoing
      , EdgeTraversalResult Outgoing (EdgeCardinality l) (Edge m) ~ a (Edge m))
   => l
   -> Vertex m
-  -> m (Either Anomaly (a (Edge m)))
+  -> m (Either (Anomaly l (Vertex m)) (a (Edge m)))
 outgoing = getEdgesOut
 
 source :: GraphEngine m => Edge m -> m (Vertex m)
@@ -135,5 +135,5 @@ hopOutgoing n l v
         where traverser x = hopOutgoing (n-1) l x
 
 -- | Propagate an Anomaly out through a traversable.
-propagateAnomaly :: Traversable t => t (Either Anomaly a) -> Either Anomaly (t a)
+propagateAnomaly :: Traversable t => t (Either (Anomaly l v) a) -> Either (Anomaly l v) (t a)
 propagateAnomaly = traverse id
