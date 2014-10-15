@@ -22,7 +22,6 @@ module Data.GraphPatterns.GraphEngine (
   ) where
 
 import Control.Applicative (Applicative)
-import Data.Functor.Identity (Identity, runIdentity)
 import Data.Traversable (Traversable)
 import Data.Foldable (Foldable)
 
