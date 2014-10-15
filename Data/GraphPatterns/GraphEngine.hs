@@ -1,8 +1,6 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE DeriveTraversable #-}
--- TBD can we get rid of this next one?
-{-# LANGUAGE AllowAmbiguousTypes #-}
 
 module Data.GraphPatterns.GraphEngine (
     GraphEngine(..)
@@ -34,7 +32,7 @@ class EdgeLabel l where
   -- | Must be one of ManyToOne, OneToMany, ManyToMany, OneToOne
   --   Can we enforce this?
   type EdgeCardinality l :: *
-  toEngine :: GraphEngine m => l -> EngineEdgeLabel m
+  toEngine :: l -> EngineEdgeLabel m
 
 data Incoming = Incoming
 data Outgoing = Outgoing
@@ -111,7 +109,7 @@ class (Functor m, Applicative m, Monad m) => GraphEngine m where
 
   -- | Type of edge labels. If a given implementation of Graph does not support
   --   this notion, you should use the type ().
-  type EngineEdgeLabel m :: *
+  data EngineEdgeLabel m :: *
 
   -- | Type of vertices.
   type Vertex m :: *
