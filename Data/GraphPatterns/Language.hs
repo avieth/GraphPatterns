@@ -11,7 +11,7 @@ module Data.GraphPatterns.Language (
   , adjacentIn
   , adjacent
   , hopIncoming
-  --, hopOutgoing
+  , hopOutgoing
   ) where
 
 import Data.GraphPatterns.GraphEngine
@@ -29,17 +29,21 @@ edge :: GraphEngine m => EdgeId m -> m (Maybe (Edge m))
 edge = getEdgeById
 
 incoming
-  :: (GraphEngine m, EdgeLabel l)
+  :: ( GraphEngine m
+     , HandlesAnomaly a
+     , EdgeTraversalResult Incoming (EdgeCardinality l) (Edge m) ~ a (Edge m))
   => l
   -> Vertex m
-  -> m (EdgeTraversalResult Incoming (EdgeCardinality l) (Edge m))
+  -> m (Either Anomaly (a (Edge m)))
 incoming = getEdgesIn
 
 outgoing
-  :: (GraphEngine m, EdgeLabel l)
+  :: ( GraphEngine m
+     , HandlesAnomaly a
+     , EdgeTraversalResult Outgoing (EdgeCardinality l) (Edge m) ~ a (Edge m))
   => l
   -> Vertex m
-  -> m (EdgeTraversalResult Outgoing (EdgeCardinality l) (Edge m))
+  -> m (Either Anomaly (a (Edge m)))
 outgoing = getEdgesOut
 
 source :: GraphEngine m => Edge m -> m (Vertex m)
@@ -48,48 +52,10 @@ source = getSourceVertex
 target :: GraphEngine m => Edge m -> m (Vertex m)
 target = getTargetVertex
 
--- WART: I want this type signature...
---adjacentOut
---  :: (GraphEngine m, EdgeLabel l)
---  => l
---  -> Vertex m
---  -> m (EdgeTraversalResult Outgoing (EdgeCardinality l) (Vertex m))
--- ... but I have to give
-adjacentOut
-  :: (Traversable t, GraphEngine m, EdgeLabel l, EdgeTraversalResult Outgoing (EdgeCardinality l) (Edge m) ~ t (Edge m))
-  => l
-  -> Vertex m
-  -> m (t (Vertex m))
--- because I haven't told GHC that every image of EdgeTraversalResult is a
--- Traversable. Is that possible?
-adjacentOut el v = do
-  es <- getEdgesOut el v
-  -- Shit, we don't know what the type of es is!
-  -- We've got to dispatch this at the type level, as part of a class perhaps?
-  -- Maybe we could have some function
-  --
-  -- class Magic c where
-  --   magic :: ([a] -> b) -> EdgeTraversalResult _ c _ -> b
-  -- 
-  -- instance Magic Incoming ManyToMany where
-  --   magic f x = mapM
-  --
-  -- We know that es is a monad (either Identity or []) so we can map into
-  -- it
-  traverse getTargetVertex es
+adjacentOut el v = getEdgesOut el v >>= traverse (fmap getTargetVertex)
 
-adjacentIn
-  :: (Traversable t, GraphEngine m, EdgeLabel l, EdgeTraversalResult Incoming (EdgeCardinality l) (Edge m) ~ t (Edge m))
-  => l
-  -> Vertex m
-  -> m (t (Vertex m))
-adjacentIn el v = getEdgesIn el v >>= traverse getSourceVertex
+adjacentIn el v = getEdgesIn el v >>= traverse (fmap getSourceVertex)
 
-adjacent
-  :: (Traversable t, GraphEngine m, EdgeLabel l, EdgeTraversalResult Both (EdgeCardinality l) (Edge m) ~ t (Edge m))
-  => l
-  -> Vertex m
-  -> m (t (Vertex m))
 adjacent el v = do
   esIn <- getEdgesIn el v
   esOut <- getEdgesOut el v
@@ -109,38 +75,44 @@ adjacent el v = do
   -- ...
   return undefined
 
--- | A traversal plus a join on the inner monad (the traversable is also a
---   monad).
-flatTraverse
-  :: (Traversable t, Monad t, Applicative f)
-  => (a -> f (t b))
-  -> t a
-  -> f (t b)
-flatTraverse = (doublefmap join) . traverse
-  where doublefmap = fmap . fmap
-
 -- Hop n times on incoming edges.
-hopIncoming
-  :: ( Monad t, Traversable t, GraphEngine m, EdgeLabel l
-     , EdgeTraversalResult Incoming (EdgeCardinality l) (Edge m) ~ t (Edge m))
-  => Int
-  -> l
-  -> Vertex m
-  -> m (t (Vertex m))
 hopIncoming n l v
-  | n > 0 = adjacentIn l v >>= flatTraverse (hopIncoming (n-1) l)
+  | n > 0 = adjacentIn l v >>= \r -> case r of
+      Left y -> return $ Left y
+      -- The type in Right s, s :: t a
+      -- and we want to produce something of type
+      --
+      --   m (Either Anomaly (t a))
+      -- 
+      -- Ok, so we traverse the t, doing hopIncoming (n-1) l, which
+      -- gives us something of type
+      --
+      --   traverse traverser s :: m (t (Either Anomaly (t a)))
+      --
+      -- and then we propagateAnomaly to get an
+      --
+      --   m (Either Anomaly (t (t a)))
+      --
+      -- followed by a join in the innermost monad to get what we need
+      --
+      --   m (Either Anomaly (t a))
+      --
+      -- and it's still all good.
+      Right s -> (fmap join) . propagateAnomaly <$> (traverse traverser s)
+        where traverser x = hopIncoming (n-1) l x
+
   -- We return v even if n < 0. Better than error? Not sure.
-  | otherwise = return . return $ v
+  -- Note the 3 returns. Once for the GraphEngine monad, once for
+  -- Either Anomaly, and once for the EdgeTraversalResult image.
+  | otherwise = return . return . return $ v
 
 -- Hop n times on outgoing edges.
-hopOutgoing
-  :: ( Monad t, Traversable t, GraphEngine m, EdgeLabel l
-     , EdgeTraversalResult Outgoing (EdgeCardinality l) (Edge m) ~ t (Edge m))
-  => Int
-  -> l
-  -> Vertex m
-  -> m (t (Vertex m))
 hopOutgoing n l v
-  | n > 0 = adjacentOut l v >>= flatTraverse (hopOutgoing (n-1) l)
-  -- We return v even if n < 0. Better than error? Not sure.
-  | otherwise = return . return $ v
+  | n > 0 = adjacentOut l v >>= \r -> case r of
+      Left y -> return $ Left y
+      Right s -> (fmap join) . propagateAnomaly <$> (traverse traverser s)
+        where traverser x = hopOutgoing (n-1) l x
+
+-- | Propagate an Anomaly out through a traversable.
+propagateAnomaly :: Traversable t => t (Either Anomaly a) -> Either Anomaly (t a)
+propagateAnomaly = traverse id

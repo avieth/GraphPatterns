@@ -1,5 +1,8 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE DeriveTraversable #-}
+-- TBD can we get rid of this next one?
+{-# LANGUAGE AllowAmbiguousTypes #-}
 
 module Data.GraphPatterns.GraphEngine (
     GraphEngine(..)
@@ -8,12 +11,14 @@ module Data.GraphPatterns.GraphEngine (
   , ManyToMany
   , OneToOne
   , EdgeLabel(..)
-  , Incoming
-  , Outgoing
-  , Both
+  , Incoming(..)
+  , Outgoing(..)
+  , Both(..)
   , EdgeTraversalResult
   , Many
   , One
+  , Anomaly(..)
+  , HandlesAnomaly(..)
   ) where
 
 import Control.Applicative (Applicative)
@@ -32,9 +37,9 @@ class EdgeLabel l where
   type EdgeCardinality l :: *
   toEngine :: GraphEngine m => l -> EngineEdgeLabel m
 
-data Incoming
-data Outgoing
-data Both
+data Incoming = Incoming
+data Outgoing = Outgoing
+data Both = Both
 
 -- | Type to represent many of some thing. Naturally, we choose the list.
 newtype Many a = Many [a]
@@ -69,6 +74,21 @@ type instance EdgeTraversalResult Both ManyToOne a = Many a
 type instance EdgeTraversalResult Both ManyToMany a = Many a
 type instance EdgeTraversalResult Both OneToMany a = Many a
 type instance EdgeTraversalResult Both OneToOne a = One a
+
+data Anomaly
+  = UnknownAnomaly
+    deriving (Show)
+
+class HandlesAnomaly a where
+  handleAnomaly :: (EdgeTraversalResult d (EdgeCardinality l) b ~ a b) => d -> l -> [b] -> Either Anomaly (a b)
+
+instance HandlesAnomaly One where
+  handleAnomaly _ _ [] = Right $ One Nothing
+  handleAnomaly _ _ [x] = Right $ One (Just x)
+  handleAnomaly _ _ _ = Left UnknownAnomaly
+
+instance HandlesAnomaly Many where
+  handleAnomaly _ _ xs = Right $ Many xs
 
 -- | Class to describe anything that can be used as a graph engine.
 --   We don't want to force it to be in IO, because pure Haskell graph
@@ -115,20 +135,26 @@ class (Functor m, Applicative m, Monad m) => GraphEngine m where
   --   Cannot give a default implementation for undirected graphs because we
   --   have the Outgoing type in there.
   getEdgesOut
-    :: (EdgeLabel l)
+    :: ( HandlesAnomaly a
+       , EdgeTraversalResult Outgoing (EdgeCardinality l) (Edge m) ~ a (Edge m))
     => l
     -- ^ The intention is that this guy is a value used only for its type a la
     -- singleton types... call it a singleton value?
     -> Vertex m
-    -> m (EdgeTraversalResult Outgoing (EdgeCardinality l) (Edge m))
+    -> m (Either Anomaly (a (Edge m)))
 
   -- | Given a Vertex, produce a list of all Edges incoming, i.e. with tail
   --   ends at the Vertex.
   getEdgesIn
-    :: (EdgeLabel l)
+    :: ( HandlesAnomaly a
+       , EdgeTraversalResult Incoming (EdgeCardinality l) (Edge m) ~ a (Edge m))
     => l
+    -- ^ The intention is that this guy is a value used only for its type a la
+    -- singleton types... call it a singleton value?
     -> Vertex m
-    -> m (EdgeTraversalResult Incoming (EdgeCardinality l) (Edge m))
+    -> m (Either Anomaly (a (Edge m)))
+
+
 
   -- | Get the vertex to which an edge goes in (head of edge is here).
   getTargetVertex :: Edge m -> m (Vertex m)
