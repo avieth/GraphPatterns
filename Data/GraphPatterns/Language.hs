@@ -52,9 +52,30 @@ source = getSourceVertex
 target :: GraphEngine m => Edge m -> m (Vertex m)
 target = getTargetVertex
 
-adjacentOut el v = getEdgesOut el v >>= traverse (fmap getTargetVertex)
+-- It's given that
+--
+--   getEdgesOut el v :: m (Either Anomaly (a (Edge m)))
+--
+-- and we want to produce
+--
+--   adjacentOut el v :: m (Either Anomaly (a (Vertex m)))
+--
+-- so we bind with a function of type
+--
+--   (Either Anomaly (a (Edge m))) -> m (Either Anomaly (a (Vertex m)))
+--
+-- which is done by traversing the Either Anomaly with
+--
+--   (a (Edge m)) -> m (a (Vertex m))
+--
+-- where the function of the above type is, of course
+--
+--   traverse getTargetVertex
+--
+-- and a similar story for adjacentIn.
+adjacentOut el v = getEdgesOut el v >>= traverse (traverse getTargetVertex)
 
-adjacentIn el v = getEdgesIn el v >>= traverse (fmap getSourceVertex)
+adjacentIn el v = getEdgesIn el v >>= traverse (traverse getSourceVertex)
 
 adjacent el v = do
   esIn <- getEdgesIn el v
