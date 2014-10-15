@@ -22,16 +22,18 @@ instance GraphEngine PureGraph where
   type Edge PureGraph = G.Edge
   type EdgeId PureGraph = Void
   type VertexId PureGraph = G.Vertex
-  type EdgeLabel PureGraph = ()
+  type EngineEdgeLabel PureGraph = ()
   runGraphEngine (PureGraph f) g = f g
   getVertexById vid = PureGraph $ \g -> case (elem vid) $ vertices g of
     True -> Just vid
     False -> Nothing
   -- | This one can never be called, because EdgeId PureGraph = Void!
   getEdgeById = undefined
-  getEdgesOut _ v = PureGraph $ \g -> filter predicate $ edges g
+  getEdgesOut l v = PureGraph $ \g ->
+      handleAnomaly Outgoing l (filter predicate $ edges g)
     where predicate (x, _) = x == v
-  getEdgesIn _ v = PureGraph $ \g -> filter predicate $ edges g
+  getEdgesIn l v = PureGraph $ \g ->
+      handleAnomaly Incoming l (filter predicate $ edges g)
     where predicate (_, x) = x == v
   getTargetVertex = return . snd
   getSourceVertex = return . fst
