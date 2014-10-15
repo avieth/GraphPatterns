@@ -22,7 +22,7 @@ instance GraphEngine PureGraph where
   type Edge PureGraph = G.Edge
   type EdgeId PureGraph = Void
   type VertexId PureGraph = G.Vertex
-  type EngineEdgeLabel PureGraph = ()
+  data EngineEdgeLabel PureGraph = PureGraphEdgeLabel ()
   runGraphEngine (PureGraph f) g = f g
   getVertexById vid = PureGraph $ \g -> case (elem vid) $ vertices g of
     True -> Just vid
