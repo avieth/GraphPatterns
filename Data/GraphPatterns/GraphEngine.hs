@@ -176,8 +176,6 @@ class (Functor m, Applicative m, Monad m) => GraphEngine m where
     -> Vertex m
     -> m (Either Anomaly (a (Edge m)))
 
-
-
   -- | Get the vertex to which an edge goes in (head of edge is here).
   getTargetVertex :: Edge m -> m (Vertex m)
 
