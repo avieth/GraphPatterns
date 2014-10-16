@@ -12,6 +12,8 @@ module Data.GraphPatterns.Language (
   , adjacent
   , hopIncoming
   , hopOutgoing
+  , propagateAnomaly
+  , raise
   ) where
 
 import Data.GraphPatterns.GraphEngine
@@ -34,7 +36,7 @@ incoming
      , EdgeTraversalResult Incoming (EdgeCardinality l) (Edge m) ~ a (Edge m))
   => l
   -> Vertex m
-  -> m (Either (Anomaly l (Vertex m)) (a (Edge m)))
+  -> m (Either Anomaly (a (Edge m)))
 incoming = getEdgesIn
 
 outgoing
@@ -43,7 +45,7 @@ outgoing
      , EdgeTraversalResult Outgoing (EdgeCardinality l) (Edge m) ~ a (Edge m))
   => l
   -> Vertex m
-  -> m (Either (Anomaly l (Vertex m)) (a (Edge m)))
+  -> m (Either Anomaly (a (Edge m)))
 outgoing = getEdgesOut
 
 source :: GraphEngine m => Edge m -> m (Vertex m)
@@ -100,6 +102,9 @@ adjacent el v = do
 hopIncoming n l v
   | n > 0 = adjacentIn l v >>= \r -> case r of
       Left y -> return $ Left y
+      -- Could use raise (hopOutgoing (n-1) l) but I write it out because I
+      -- had a hard time deriving it.
+      --
       -- The type in Right s, s :: t a
       -- and we want to produce something of type
       --
@@ -129,11 +134,17 @@ hopIncoming n l v
 
 -- Hop n times on outgoing edges.
 hopOutgoing n l v
-  | n > 0 = adjacentOut l v >>= \r -> case r of
-      Left y -> return $ Left y
-      Right s -> (fmap join) . propagateAnomaly <$> (traverse traverser s)
-        where traverser x = hopOutgoing (n-1) l x
+  | n > 0 = adjacentOut l v >>= raise (hopOutgoing (n-1) l)
 
 -- | Propagate an Anomaly out through a traversable.
-propagateAnomaly :: Traversable t => t (Either (Anomaly l v) a) -> Either (Anomaly l v) (t a)
+propagateAnomaly :: Traversable t => t (Either Anomaly a) -> Either Anomaly (t a)
 propagateAnomaly = traverse id
+
+-- | Apply a Kleisli-arrow-esque thing up through the Either Anomaly wrapper.
+-- TODO this is too complex, a bit of a barrier to entry...
+raise
+  :: (Traversable f, Monad f, Applicative m, Monad m)
+  => (a -> m (Either Anomaly (f a)))
+  -> Either Anomaly (f a) -> m (Either Anomaly (f a))
+raise _ (Left x) = return $ Left x
+raise f (Right x) = (fmap join) . propagateAnomaly <$> (traverse f x)

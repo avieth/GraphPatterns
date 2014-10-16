@@ -1,6 +1,7 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE DeriveTraversable #-}
+{-# LANGUAGE ExistentialQuantification #-}
 
 module Data.GraphPatterns.GraphEngine (
     GraphEngine(..)
@@ -33,6 +34,8 @@ class EdgeLabel l where
   --   Can we enforce this?
   type EdgeCardinality l :: *
   toEngine :: l -> EngineEdgeLabel m
+  showEdgeLabel :: l -> String
+  showEdgeLabel _ = "UnknownEdgeLabel"
 
 data Incoming = Incoming
 data Outgoing = Outgoing
@@ -72,11 +75,32 @@ type instance EdgeTraversalResult Both ManyToMany a = Many a
 type instance EdgeTraversalResult Both OneToMany a = Many a
 type instance EdgeTraversalResult Both OneToOne a = One a
 
-data Anomaly l v = EdgeCardinalityAnomaly l v
-    deriving (Show)
+-- | We choose existential types because universal quantification would demand
+--   that edge traversal datatypes grow to include a new Either Anomaly for 
+--   every hop; we wouldn't be able to collapse anomalies for different edge
+--   labels into one anomaly. With existential types we can.
+--
+--   Also, TBD are the (GraphEngine m, v ~ Vertex m) constraints really needed?
+data Anomaly = forall l v m . (GraphEngine m, v ~ Vertex m, EdgeLabel l) => EdgeCardinalityAnomaly l v
 
+instance Show Anomaly where
+  show (EdgeCardinalityAnomaly l v) = showEdgeLabel l
+
+-- | This class allows us to dispatch anomalies through more than one type, i.e.
+--   through Many and One. Instances of this class are where we code the
+--   conditions under which an anomaly occurs (the only case is when a One is
+--   to had but there is more than one edge).
 class HandlesAnomaly a where
-  handleAnomaly :: (GraphEngine m, EdgeTraversalResult d (EdgeCardinality l) b ~ a b) => d -> l -> Vertex m -> [b] -> Either (Anomaly l (Vertex m)) (a b)
+  handleAnomaly
+    :: ( EdgeLabel l
+       , GraphEngine m
+       , EdgeTraversalResult d (EdgeCardinality l) b ~ a b
+       )
+    => d
+    -> l
+    -> Vertex m
+    -> [b]
+    -> Either Anomaly (a b)
 
 instance HandlesAnomaly One where
   handleAnomaly _ _ _ [] = Right $ One Nothing
@@ -137,7 +161,7 @@ class (Functor m, Applicative m, Monad m) => GraphEngine m where
     -- ^ The intention is that this guy is a value used only for its type a la
     -- singleton types... call it a singleton value?
     -> Vertex m
-    -> m (Either (Anomaly l (Vertex m)) (a (Edge m)))
+    -> m (Either Anomaly (a (Edge m)))
 
   -- | Given a Vertex, produce a list of all Edges incoming, i.e. with tail
   --   ends at the Vertex.
@@ -148,7 +172,7 @@ class (Functor m, Applicative m, Monad m) => GraphEngine m where
     -- ^ The intention is that this guy is a value used only for its type a la
     -- singleton types... call it a singleton value?
     -> Vertex m
-    -> m (Either (Anomaly l (Vertex m)) (a (Edge m)))
+    -> m (Either Anomaly (a (Edge m)))
 
 
 
