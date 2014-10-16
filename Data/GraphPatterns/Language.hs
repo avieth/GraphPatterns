@@ -33,6 +33,7 @@ edge = getEdgeById
 incoming
   :: ( GraphEngine m
      , HandlesAnomaly a
+     , EdgeLabel l
      , EdgeTraversalResult Incoming (EdgeCardinality l) (Edge m) ~ a (Edge m))
   => l
   -> Vertex m
@@ -42,6 +43,7 @@ incoming = getEdgesIn
 outgoing
   :: ( GraphEngine m
      , HandlesAnomaly a
+     , EdgeLabel l
      , EdgeTraversalResult Outgoing (EdgeCardinality l) (Edge m) ~ a (Edge m))
   => l
   -> Vertex m

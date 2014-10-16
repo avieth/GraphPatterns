@@ -156,6 +156,7 @@ class (Functor m, Applicative m, Monad m) => GraphEngine m where
   --   have the Outgoing type in there.
   getEdgesOut
     :: ( HandlesAnomaly a
+       , EdgeLabel l
        , EdgeTraversalResult Outgoing (EdgeCardinality l) (Edge m) ~ a (Edge m))
     => l
     -- ^ The intention is that this guy is a value used only for its type a la
@@ -167,6 +168,7 @@ class (Functor m, Applicative m, Monad m) => GraphEngine m where
   --   ends at the Vertex.
   getEdgesIn
     :: ( HandlesAnomaly a
+       , EdgeLabel l
        , EdgeTraversalResult Incoming (EdgeCardinality l) (Edge m) ~ a (Edge m))
     => l
     -- ^ The intention is that this guy is a value used only for its type a la
