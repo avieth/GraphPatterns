@@ -1,7 +1,16 @@
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE ExistentialQuantification #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE ExplicitForAll #-}
+{-# LANGUAGE FlexibleContexts #-}
 
 module Data.GraphPatterns.Language (
-    vertex
+
+    GraphPatterns
+  , runGraphPatterns
+
+  , vertex
   , edge
   , incoming
   , outgoing
@@ -9,144 +18,224 @@ module Data.GraphPatterns.Language (
   , target
   , adjacentOut
   , adjacentIn
-  , adjacent
+
+  {-
+
+    TODO hopIncoming takes n hops on incoming edges of a given type.
   , hopIncoming
+    TODO hopOutgoing takes n hops on outgoing edges of a given type.
   , hopOutgoing
-  , propagateAnomaly
-  , raise
+  -}
+
   ) where
 
 import Data.GraphPatterns.GraphEngine
+import Data.GraphPatterns.Anomaly
+import Data.GraphPatterns.Vertex
+import Data.GraphPatterns.Edge
+import Data.GraphPatterns.Types
 
-import Control.Applicative ((<$>), (<*>), Applicative)
+import Control.Applicative ((<$>), (<*>), Applicative, pure)
 import Control.Monad (join)
 import Data.Traversable (traverse, Traversable)
+import Data.Proxy
 
--- Some declarative sugar for GraphEngine methods (no verbs).
+-- | Our EDSL as a monad (for a fixed GraphEngine).
+data GraphPatterns m a = GraphPatterns (m (Anomalized a))
 
-vertex :: GraphEngine m => VertexId m -> m (Maybe (Vertex m))
-vertex = getVertexById
+unGraphPatterns :: GraphPatterns m a -> m (Anomalized a)
+unGraphPatterns (GraphPatterns x) = x
 
-edge :: GraphEngine m => EdgeId m -> m (Maybe (Edge m))
-edge = getEdgeById
+-- | Given an EngineGraph we can run our GraphPatterns expression.
+runGraphPatterns
+  :: GraphEngine m
+  => GraphPatterns m a
+  -> EngineGraph m
+  -> Anomalized a
+runGraphPatterns (GraphPatterns x) g = runGraphEngine x g
+
+instance Functor m => Functor (GraphPatterns m) where
+  fmap f = GraphPatterns . ((fmap . fmap) f) . unGraphPatterns
+
+instance Applicative m => Applicative (GraphPatterns m) where
+  pure = GraphPatterns . pure . pure
+  (<*>) f x = GraphPatterns $ (unGraphPatterns f) <*^*> (unGraphPatterns x)
+    where (<*^*>) f x = (fmap (<*>) f) <*> x
+
+instance Monad m => Monad (GraphPatterns m) where
+  return = GraphPatterns . return . return
+  -- TODO can we abstract this block like we did for <*> ?
+  x >>= k = GraphPatterns $ do
+      either <- unGraphPatterns x
+      case either of
+        Left y -> return $ Left y
+        Right z -> unGraphPatterns $ k z
+
+-- This is not the most general type.
+vertex :: (DeterminesVertex m d v) => Proxy v -> d -> GraphPatterns m [v]
+vertex vertexProxy determiner = GraphPatterns $ do
+  let vertexInfo = toEngineVertexInformation Proxy vertexProxy determiner
+  engineVertices <- getVertices vertexInfo
+
+  -- Check for anomaly based on uniqueness...
+  -- Do we even need type-level trickery for this? Can't we just ask the
+  -- class to indicate unique or not unique at value level?
+  --let anomalized = case engineVertices of
+  --      [] -> Right []
+  --      x -> Right x
+  --
+
+  -- If any of them are Nothing, we want an anomaly.
+  -- That's to say, we want a function
+  --
+  --   Either Anomaly (Maybe a) -> Either Anomaly a
+  --
+  --   (a -> f b) -> t a -> f (t b)
+  --
+  -- Aha never mind, traverse takes care of this for us.
+  --
+  -- Hm, is there a good reason to not just use [] always, and do away with
+  -- the One, Many types? We could just check this at the data level here.
+  --
+  --   data EdgeCardinality
+  --     = OneToOne
+  --     | ManyToMany
+  --     | ManyToOne
+  --     | OneToMany
+  --
+  --   data DeterminerUniqueness = Unique | NotUnique
+  --
+  -- and then have
+  --
+  --   (DeterminesVertex m d v) => Proxy m -> Proxy d -> Proxy v -> DeterminerUniqueness
+  --   (Edge m e) => Proxy m -> Proxy e -> EdgeCardinality
+  --
+  -- Hm, yeah, either way we need type-level trickery, with all of those proxies.
+  -- The alternative is to stick another clause in the type signature of this
+  -- function vertex, saying that the output is
+  --
+  --   (ResultsWrapper t) => Anomalized (t v)
+  --
+  -- and we have
+  --
+  --   handleUniquenessAnomaly :: ResultWrapper t => Uniqueness -> [v] -> Anomalized (t v)
+  --   handleUniquenessAnomaly True (x : y : _) = Left _
+  --   handleUniquenessAnomaly True x = Right (One (Just x))
+  --   handleUniquenessAnomaly False xs = Right (Many xs)
+  --
+  -- Yeah we can't implement that; the type system just won't allow it, even
+  -- though One and Many are both ResultWrappers.
+  --
+  -- What we _really_ need are
+  --
+  --   vertexUniquenessAnomaly :: ResultWrapper t => [v] -> Anomalized (t v)
+  --   edgeUniquenessAnomaly :: ResultWrapper t => [e] -> Anomalized (t e)
+  --   edgeCardinalityAnomaly :: ResultWrapper t => [v] -> Anomalized (t v)
+  --
+  -- The uniqueness constraints take more, requires the type of the determiner
+  -- and of course the graph engine.
+  --
+  --   vertexUniquenessAnomaly :: (DeterminesVertex m d v, ResultWrapper t)
+  --     => Proxy m -> Proxy d -> [v] -> Anomalized (t v)
+  --
+  case traverse (fromEngineVertex Proxy) engineVertices of
+    Nothing -> return $ Left undefined
+    Just x -> return $ Right x
+
+edge :: (DeterminesEdge m d e) => Proxy e -> d -> GraphPatterns m [e]
+edge edgeProxy determiner = GraphPatterns $ do
+  let edgeInfo = toEngineEdgeInformation Proxy edgeProxy determiner
+  engineEdges <- getEdges edgeInfo
+  case traverse (fromEngineEdge Proxy) engineEdges of
+    Nothing -> return $ Left undefined
+    Just x -> return $ Right x
 
 incoming
-  :: ( GraphEngine m
-     , HandlesAnomaly a
-     , EdgeLabel l
-     , EdgeTraversalResult Incoming (EdgeCardinality l) (Edge m) ~ a (Edge m))
-  => l
-  -> Vertex m
-  -> m (Either Anomaly (a (Edge m)))
-incoming = getEdgesIn
+  :: forall m e v d .
+     ( Edge m e
+     , Vertex m v
+     , DeterminesLocalEdge m v e d
+     , EdgeDirection m v e d ~ In
+     )
+  => d
+  -> v
+  -> GraphPatterns m [e]
+incoming determiner v = GraphPatterns $ do
+  let edgeInfo = toEngineEdgeInformationLocal Proxy (Proxy :: Proxy v) (Proxy :: Proxy e) determiner
+  engineEdges <- getEdgesIn edgeInfo (toEngineVertex Proxy v)
+  case traverse (fromEngineEdge Proxy) engineEdges of
+    Nothing -> return $ Left undefined
+    Just x -> return $ Right x
 
 outgoing
-  :: ( GraphEngine m
-     , HandlesAnomaly a
-     , EdgeLabel l
-     , EdgeTraversalResult Outgoing (EdgeCardinality l) (Edge m) ~ a (Edge m))
-  => l
-  -> Vertex m
-  -> m (Either Anomaly (a (Edge m)))
-outgoing = getEdgesOut
+  :: forall m e v d .
+     ( Edge m e
+     , Vertex m v
+     , DeterminesLocalEdge m v e d
+     , EdgeDirection m v e d ~ Out
+     )
+  => d
+  -> v
+  -> GraphPatterns m [e]
+outgoing determiner v = GraphPatterns $ do
+  let edgeInfo = toEngineEdgeInformationLocal Proxy (Proxy :: Proxy v) (Proxy :: Proxy e) determiner
+  engineEdges <- getEdgesIn edgeInfo (toEngineVertex Proxy v)
+  case traverse (fromEngineEdge Proxy) engineEdges of
+    Nothing -> return $ Left undefined
+    Just x -> return $ Right x
 
-source :: GraphEngine m => Edge m -> m (Vertex m)
-source = getSourceVertex
+source
+  :: forall m e .
+     ( Edge m e
+     )
+  => e
+  -> GraphPatterns m (EdgeSource m e)
+source edge = GraphPatterns $ do
+  let engineEdge = toEngineEdge Proxy edge
+  engineSourceVertex <- getSourceVertex engineEdge
+  case fromEngineVertex (Proxy :: Proxy m) engineSourceVertex of
+    Nothing -> return $ Left undefined
+    Just x -> return $ Right x
 
-target :: GraphEngine m => Edge m -> m (Vertex m)
-target = getTargetVertex
+target
+  :: forall m e .
+     ( Edge m e
+     )
+  => e
+  -> GraphPatterns m (EdgeTarget m e)
+target edge = GraphPatterns $ do
+  let engineEdge = toEngineEdge Proxy edge
+  engineTargetVertex <- getTargetVertex engineEdge
+  case fromEngineVertex (Proxy :: Proxy m) engineTargetVertex of
+    Nothing -> return $ Left undefined
+    Just x -> return $ Right x
 
--- It's given that
---
---   getEdgesOut el v :: m (Either Anomaly (a (Edge m)))
---
--- and we want to produce
---
---   adjacentOut el v :: m (Either Anomaly (a (Vertex m)))
---
--- so we bind with a function of type
---
---   (Either Anomaly (a (Edge m))) -> m (Either Anomaly (a (Vertex m)))
---
--- which is done by traversing the Either Anomaly with
---
---   (a (Edge m)) -> m (a (Vertex m))
---
--- where the function of the above type is, of course
---
---   traverse getTargetVertex
---
--- and a similar story for adjacentIn.
-adjacentOut el v = getEdgesOut el v >>= traverse (traverse getTargetVertex)
+adjacentOut
+  :: forall m e d .
+     ( DeterminesLocalEdge m (EdgeSource m e) e d
+     , EdgeDirection m (EdgeSource m e) e d ~ Out
+     )
+  => Proxy e
+  -- ^ Somehow, we need the proxy to avoid ambiguity, but we never actually
+  -- use the relevant value or its type... do we?
+  -- Can't wrap my head around this witchcraft.
+  -> d
+  -> EdgeSource m e
+  -> GraphPatterns m [EdgeTarget m e]
+adjacentOut proxy d v = do
+  outs :: [e] <- outgoing d v
+  -- ^ This type annotation is essential; without it we get ambiguity!
+  mapM target outs
 
-adjacentIn el v = getEdgesIn el v >>= traverse (traverse getSourceVertex)
-
-adjacent el v = do
-  esIn <- getEdgesIn el v
-  esOut <- getEdgesOut el v
-  -- Oh no, what are the types!?!?!
-  --(++) <$> mapM getSourceVertex esIn <*> mapM getTargetVertex esOut
-  -- Perhaps we need a class
-  --
-  --   class Magic a b c where
-  --     combine a b :: a -> b -> c
-  --
-  --   instance Magic (One a) (Many a) (Many a) where
-  --     combine (One x) (Many ys) = Many $ (runIdentity x) : ys
-  --
-  --   instance Magic (Many a) (One a) (Many a) where
-  --     combine (Many xs) (One y) = Many $ xs ++ [runIdentity y]
-  --
-  -- ...
-  return undefined
-
--- Hop n times on incoming edges.
-hopIncoming n l v
-  | n > 0 = adjacentIn l v >>= \r -> case r of
-      Left y -> return $ Left y
-      -- Could use raise (hopOutgoing (n-1) l) but I write it out because I
-      -- had a hard time deriving it.
-      --
-      -- The type in Right s, s :: t a
-      -- and we want to produce something of type
-      --
-      --   m (Either Anomaly (t a))
-      -- 
-      -- Ok, so we traverse the t, doing hopIncoming (n-1) l, which
-      -- gives us something of type
-      --
-      --   traverse traverser s :: m (t (Either Anomaly (t a)))
-      --
-      -- and then we propagateAnomaly to get an
-      --
-      --   m (Either Anomaly (t (t a)))
-      --
-      -- followed by a join in the innermost monad to get what we need
-      --
-      --   m (Either Anomaly (t a))
-      --
-      -- and it's still all good.
-      Right s -> (fmap join) . propagateAnomaly <$> (traverse traverser s)
-        where traverser x = hopIncoming (n-1) l x
-
-  -- We return v even if n < 0. Better than error? Not sure.
-  -- Note the 3 returns. Once for the GraphEngine monad, once for
-  -- Either Anomaly, and once for the EdgeTraversalResult image.
-  | otherwise = return . return . return $ v
-
--- Hop n times on outgoing edges.
-hopOutgoing n l v
-  | n > 0 = adjacentOut l v >>= raise (hopOutgoing (n-1) l)
-
--- | Propagate an Anomaly out through a traversable.
-propagateAnomaly :: Traversable t => t (Either Anomaly a) -> Either Anomaly (t a)
-propagateAnomaly = traverse id
-
--- | Apply a Kleisli-arrow-esque thing up through the Either Anomaly wrapper.
--- TODO this is too complex, a bit of a barrier to entry...
-raise
-  :: (Traversable f, Monad f, Applicative m, Monad m)
-  => (a -> m (Either Anomaly (f a)))
-  -> Either Anomaly (f a) -> m (Either Anomaly (f a))
-raise _ (Left x) = return $ Left x
-raise f (Right x) = (fmap join) . propagateAnomaly <$> (traverse f x)
+adjacentIn
+  :: forall m e d .
+     ( DeterminesLocalEdge m (EdgeTarget m e) e d
+     , EdgeDirection m (EdgeTarget m e) e d ~ In
+     )
+  => Proxy e
+  -> d
+  -> EdgeTarget m e
+  -> GraphPatterns m [EdgeSource m e]
+adjacentIn proxy d v = do
+  ins :: [e] <- incoming d v
+  mapM source ins
