@@ -37,7 +37,9 @@ class
   type EdgeTarget m e :: *
 
   type EdgeCardinalitySource m e :: *
-  -- ^ How many sources? Multi or Single?
+  -- ^ Single or Multi. This describes how many (at most 1 or arbitrarily many)
+  -- edges of this type can be out-incident with an EdgeSource. If it's single
+  -- then we know 
   type EdgeCardinalityTarget m e :: *
 
   -- ^ How many targets? Multi or Single?
@@ -120,6 +122,7 @@ instance
   type EdgeDirection m v e d = Out
   toEngineEdgeInformationLocal x _ y z = toEngineEdgeInformation x y z
 -}
+
 data Out
 data In
 
