@@ -2,10 +2,7 @@
 
 module Data.GraphPatterns.Anomaly (
     Anomaly(..)
-  , Anomalized
   ) where
-
-type Anomalized = Either Anomaly
 
 data Anomaly
   = EdgeCardinalityAnomaly
@@ -13,3 +10,4 @@ data Anomaly
   | EdgeTranslationAnomaly
   | VertexDeterminationAnomaly
   | EdgeDeterminationAnomaly
+    deriving (Show)
