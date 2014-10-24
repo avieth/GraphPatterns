@@ -132,14 +132,14 @@ use the unimplemented StupidGraph.
 >   toEngineEdge = undefined
 >   fromEngineEdge = undefined
 >
-> -- The type IsFather determines IsFather edges going into a Being.
+> -- The type IsFather determines IsFather edges going into or out of a Being.
 > instance DeterminesLocalEdge StupidGraph Being IsFather IsFather where
->   type EdgeDirection StupidGraph Being IsFather IsFather = In
+>   type EdgeDirection StupidGraph Being IsFather IsFather = Both
 >   toEngineEdgeInformationLocal = undefined
 >
-> -- The type IsMother determines IsMother edges going into a Being
+> -- The type IsMother determines IsMother edges going into or out of a Being
 > instance DeterminesLocalEdge StupidGraph Being IsMother IsMother where
->   type EdgeDirection StupidGraph Being IsMother IsMother = In
+>   type EdgeDirection StupidGraph Being IsMother IsMother = Both
 >   toEngineEdgeInformationLocal = undefined
 >
 > -- Brotherhood is bidirectional; we use two determiners. A bit of a wart but
@@ -172,42 +172,26 @@ The titan example in gremlin is as follows:
 but check out how this can be expressed in GraphPatterns:
 
 > -- We can grab everybody named Hercules
-> herculesByName :: GraphPatterns StupidGraph [Being]
+> herculesByName :: GraphPatterns StupidGraph Being
 > herculesByName = vertex (Proxy :: Proxy Being) (Name "Hercules")
 >
 > -- Or we can grab everybody named Saturn and find their grandchildren.
 > -- Hercules should be in there :)
-> herculesByGrandfather :: GraphPatterns StupidGraph [Being]
+> herculesByGrandfather :: GraphPatterns StupidGraph Being
 > herculesByGrandfather = do
->   saturns <- vertex (Proxy :: Proxy Being) (Name "Saturn")
->   fmap concat $ traverse (adjacentIn (Proxy :: Proxy IsFather) IsFather) saturns
+>   saturn <- vertex (Proxy :: Proxy Being) (Name "Saturn")
+>   adjacentIn (Proxy :: Proxy IsFather) IsFather saturn
+>   --fmap concat $ traverse (adjacentIn (Proxy :: Proxy IsFather) IsFather) saturns
 
-Excuse the fmap concat and traverse. This should be cleaner. Perhaps something
-like
-
-  herculesByGrandfather' :: GraphPatterns StupidGraph [Being]
-  herculesByGrandfather' = do
-    saturns <- vertex (Proxy :: Proxy Being) (Name "Saturn")
-    fatherEdges <- incoming FatherOf saturns
-    source fatherEdges
-
-Or better yet
-
-    saturns <- vertex (Proxy :: Proxy Being) (Name "Saturn")
-    adjacentIn (Proxy :: Proxy IsFather) FatherOf saturns
-
-with the understanding that adjacentIn can be applied to more than one
-thing... Will have to change the def'n of the GraphPatterns monad.
-
-We need to prove that Hercules is a demigod. That's to say, we must find that
-precisely one of his parents is a god and the other is human. Here's the
-gremlin session:
+We now wish to prove that Hercules is a demigod.
+Here's the gremlin recipe:
 
   gremlin> hercules.out('father','mother').type
   ==>god
   ==>human
 
-but how can we express this in GraphPatterns?
+but how can we express this in GraphPatterns? Well, we can be a little more
+particular about our types:
 
 > data Status = IsGod | IsHuman | IsDemigod
 >
@@ -222,16 +206,18 @@ but how can we express this in GraphPatterns?
 > breed IsHuman IsHuman = IsHuman
 > breed _ _ = IsDemigod
 >
-> statusOfParents vertex = do
->   mothers <- adjacentOut (Proxy :: Proxy IsMother) IsMother vertex
->   fathers <- adjacentOut (Proxy :: Proxy IsFather) IsFather vertex
->   return $ (getStatus $ head mothers, getStatus $ head fathers)
+> statusOfParents :: Being -> GraphPatterns StupidGraph (Status, Status)
+> statusOfParents being = do
+>   mother <- adjacentOut (Proxy :: Proxy IsMother) IsMother being
+>   father <- adjacentOut (Proxy :: Proxy IsFather) IsFather being
+>   return $ (getStatus mother, getStatus father)
 >   -- ^ Note the wart on the design: we still treat everything as a list, when
 >   --   we ought to hide this; we know MotherOf determines at most one vertex
 >   --   so there's no need to get back a list; Maybe is more appropriate.
 >   --   Note as well how the use of head completely subverts our goal of
 >   --   type safety! Oh well, we'll fix this up in future developments.
 >
-> statusOfPerson vertex = do
->   (motherStatus, fatherStatus) <- statusOfParents vertex
+> statusOfPerson :: Being -> GraphPatterns StupidGraph Status
+> statusOfPerson being = do
+>   (motherStatus, fatherStatus) <- statusOfParents being
 >   return $ motherStatus `breed` fatherStatus
