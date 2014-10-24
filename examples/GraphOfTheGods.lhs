@@ -4,6 +4,7 @@ alternatives in GraphPatterns.
 
 > {-# LANGUAGE TypeFamilies #-}
 > {-# LANGUAGE MultiParamTypeClasses #-}
+> {-# LANGUAGE ScopedTypeVariables #-}
 > 
 > module GraphOfTheGods where
 >
