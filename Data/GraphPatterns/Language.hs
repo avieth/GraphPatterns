@@ -40,13 +40,14 @@ import Data.GraphPatterns.Vertex
 import Data.GraphPatterns.Edge
 import Data.GraphPatterns.Types
 
-import Control.Applicative ((<$>), (<*>), Applicative, pure)
-import Control.Monad (join)
+import Control.Applicative
+import Control.Monad
 import Data.Traversable (traverse, Traversable)
 import Data.Foldable
 import Data.Proxy
 
 (<*^*>) f x = (fmap (<*>) f) <*> x
+(<|^|>) x y = (fmap (<|>) x) <*> y
 
 newtype Anomalized a = Anomalized {
     unAnomalize :: Either Anomaly a
@@ -69,6 +70,10 @@ instance Applicative GPResult where
   pure = GPResult . pure . pure
   f <*> x = GPResult $ (_unGPResult f) <*^*> (_unGPResult x)
 
+instance Alternative GPResult where
+  empty = GPResult . pure $ empty
+  x <|> y = GPResult $ (_unGPResult x) <|^|> (_unGPResult y)
+
 instance Monad GPResult where
   return = GPResult . return . return
   x >>= k = GPResult $ do
@@ -79,6 +84,13 @@ instance Monad GPResult where
     return $ concat zs
     -- This monad definition is probably not what we want, but I think it'll
     -- work for now.
+
+instance MonadPlus GPResult where
+  mzero = GPResult . return $ mzero
+  x `mplus` y = GPResult $ do
+    x' <- _unGPResult x
+    y' <- _unGPResult y
+    return $ x' `mplus` y'
 
 -- | Our EDSL as a monad (for a fixed GraphEngine).
 data GraphPatterns m a = GraphPatterns (m (GPResult a))
@@ -101,6 +113,10 @@ instance Applicative m => Applicative (GraphPatterns m) where
   pure = GraphPatterns . pure . pure
   (<*>) f x = GraphPatterns $ (unGraphPatterns f) <*^*> (unGraphPatterns x)
 
+instance Applicative m => Alternative (GraphPatterns m) where
+  empty = GraphPatterns . pure $ empty
+  x <|> y = GraphPatterns $ (unGraphPatterns x) <|^|> (unGraphPatterns y)
+
 instance (Functor m, Applicative m, Monad m) => Monad (GraphPatterns m) where
   return = GraphPatterns . return . return
   x >>= k = GraphPatterns $ do
@@ -108,6 +124,13 @@ instance (Functor m, Applicative m, Monad m) => Monad (GraphPatterns m) where
     -- ^ y :: GPResult a
     join <$> traverse (unGraphPatterns . k) y
     -- This monad definition is a bit dodgy as well. Must revise later.
+
+instance (Functor m, Applicative m, Monad m) => MonadPlus (GraphPatterns m) where
+  mzero = GraphPatterns . return $ mzero
+  x `mplus` y = GraphPatterns $ do
+    x' <- unGraphPatterns x
+    y' <- unGraphPatterns y
+    return $ x' `mplus` y'
 
 -- This is not the most general type.
 vertex :: (DeterminesVertex m d v) => Proxy v -> d -> GraphPatterns m v
