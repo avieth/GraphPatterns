@@ -194,7 +194,7 @@ incoming
      ( Edge m e
      , Vertex m v
      , DeterminesLocalEdge m v e d
-     , EdgeDirection m v e d ~ In
+     , FixDirection (EdgeDirection m v e d) In ~ In
      )
   => d
   -> v
@@ -211,7 +211,7 @@ outgoing
      ( Edge m e
      , Vertex m v
      , DeterminesLocalEdge m v e d
-     , EdgeDirection m v e d ~ Out
+     , FixDirection (EdgeDirection m v e d) Out ~ Out
      )
   => d
   -> v
@@ -252,7 +252,7 @@ target edge = GraphPatterns $ do
 adjacentOut
   :: forall m e d .
      ( DeterminesLocalEdge m (EdgeSource m e) e d
-     , EdgeDirection m (EdgeSource m e) e d ~ Out
+     , FixDirection (EdgeDirection m (EdgeSource m e) e d) Out ~ Out
      )
   => Proxy e
   -- ^ Somehow, we need the proxy to avoid ambiguity, but we never actually
@@ -269,7 +269,7 @@ adjacentOut proxy d v = do
 adjacentIn
   :: forall m e d .
      ( DeterminesLocalEdge m (EdgeTarget m e) e d
-     , EdgeDirection m (EdgeTarget m e) e d ~ In
+     , FixDirection (EdgeDirection m (EdgeTarget m e) e d) In ~ In
      )
   => Proxy e
   -> d

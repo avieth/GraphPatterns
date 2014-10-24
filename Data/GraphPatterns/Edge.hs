@@ -83,6 +83,11 @@ class
     -- NB it therefore asserts the vertex must line up with at least one of the
     -- edge's ends. Perhaps subtle, but important!
   , v ~ IfOut (EdgeDirection m v e determiner) (EdgeSource m e) (EdgeTarget m e)
+  , v ~ IfBoth (EdgeDirection m v e determiner) (EdgeSource m e) v
+  , v ~ IfBoth (EdgeDirection m v e determiner) (EdgeTarget m e) v
+    -- ^ The above two conjuncts fix EdgeSource m e ~ EdgeTarget m e just in
+    --   case the direction is Both (if it's not both, they degenerate to
+    --   v ~ v
   ) => DeterminesLocalEdge m v e determiner where
 
   -- Must indicate direction. Must be one of Out, In
@@ -122,25 +127,3 @@ instance
   type EdgeDirection m v e d = Out
   toEngineEdgeInformationLocal x _ y z = toEngineEdgeInformation x y z
 -}
-
-data Out
-data In
-
-type family IfIn d a b :: * where
-  IfIn In a b = a
-  IfIn Out a b = b
-
-type family IfOut d a b :: * where
-  IfOut Out a b = a
-  IfOut In a b = b
-
-data Multi
-data Single
-
-type family IfMulti d a b :: * where
-  IfMulti Multi a b = a
-  IfMulti Single a b = b
-
-type family IfSingle d a b :: * where
-  IfSingle Single a b = a
-  IfSingle Multi a b = b
