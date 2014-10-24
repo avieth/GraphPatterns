@@ -18,6 +18,7 @@ alternatives in GraphPatterns.
 > import Data.GraphPatterns.GraphEngine
 > 
 > import Control.Applicative
+> import Control.Monad
 > import Data.Traversable (traverse)
 
 First things first: let's describe our types. We need a GraphEngine but since
@@ -31,8 +32,13 @@ use the unimplemented StupidGraph.
 > instance GraphEngine StupidGraph
 >
 > newtype Name = Name String
+>   deriving (Eq)
 > type Age = Integer
 > -- ^ Titans can be very old; must use big Integer.
+> type Time = Integer
+> type Place = String
+> newtype Reason = Reason String
+>   deriving (Eq)
 > 
 > data Titan = Titan Name Age
 > data God = God Name Age
@@ -44,13 +50,39 @@ use the unimplemented StupidGraph.
 > data Monster = Monster Name
 > data Location = Location Name
 >
+> beingName :: Being -> Name
+> beingName (BTitan (Titan name _)) = name
+> beingName (BGod (God name _)) = name
+> beingName (BHuman (Human name _)) = name
+> beingName (BDemigod (Demigod name _)) = name
+>
+> monsterName :: Monster -> Name
+> monsterName (Monster name) = name
+>
+> locationName :: Location -> Name
+> locationName (Location name) = name
+>
 > -- Here's our edge types. We frame them in the language of relationships.
 > data IsFather = IsFather
 > data IsMother = IsMother
 > data IsBrother = IsBrother
 > data IsPet = IsPet
-> data Battled = Battled
-> data Lives = Lives
+> data Battled = Battled Time Place
+> data Lives = Lives Reason
+>
+> timeBattled :: Battled -> Time
+> timeBattled (Battled t _) = t
+>
+> why :: Lives -> Reason
+> why (Lives r) = r
+>
+> -- This is a type used to determine, locally, all edges of Battled type.
+> -- It serves the same purpose as a Titan edge label.
+> -- Note that for edge types which carry no data, it makes sense to use them
+> -- as labels as well, because we can provide them without giving any extra
+> -- information (their value constructor is a 0-ary function).
+> data HasBattled = HasBattled
+> data LivesIn = LivesIn
 >
 > -- Proof that our vertex types are actually vertices in StupidGraph.
 > -- We don't care about values right now (only types) so we leave it undefined.
@@ -70,6 +102,10 @@ use the unimplemented StupidGraph.
 > instance DeterminesVertex StupidGraph Name Being where
 >   type VertexUniqueness StupidGraph Name Being = NotUnique
 >   toEngineVertexInformation = undefined
+>
+> instance DeterminesEdge StupidGraph Reason Lives where
+>   type EdgeUniqueness StupidGraph Reason Lives = NotUnique
+>   toEngineEdgeInformation = undefined
 >
 > -- Proof that our edge types are indeed edges in StupidGraph. Again, we leave
 > -- the implementation undefined.
@@ -142,27 +178,24 @@ use the unimplemented StupidGraph.
 >   type EdgeDirection StupidGraph Being IsMother IsMother = Both
 >   toEngineEdgeInformationLocal = undefined
 >
-> -- Brotherhood is bidirectional; we use two determiners. A bit of a wart but
-> -- oh well, should work just fine.
-> data IsBrotherIn = BrotherIn
-> data IsBrotherOut = IsBrotherOut
-> instance DeterminesLocalEdge StupidGraph Being IsBrother IsBrotherIn where
->   type EdgeDirection StupidGraph Being IsBrother IsBrotherIn = In
->   toEngineEdgeInformationLocal = undefined
-> instance DeterminesLocalEdge StupidGraph Being IsBrother IsBrotherOut where
->   type EdgeDirection StupidGraph Being IsBrother IsBrotherOut = Out
+> instance DeterminesLocalEdge StupidGraph Being IsBrother IsBrother where
+>   type EdgeDirection StupidGraph Being IsBrother IsBrother = Both
 >   toEngineEdgeInformationLocal = undefined
 >
 > instance DeterminesLocalEdge StupidGraph Being IsPet IsPet where
 >   type EdgeDirection StupidGraph Being IsPet IsPet = Out
 >   toEngineEdgeInformationLocal = undefined
 >
-> instance DeterminesLocalEdge StupidGraph Being Battled Battled where
->   type EdgeDirection StupidGraph Being Battled Battled = Out
+> instance DeterminesLocalEdge StupidGraph Being Battled HasBattled where
+>   type EdgeDirection StupidGraph Being Battled HasBattled = Out
 >   toEngineEdgeInformationLocal = undefined
 
-> instance DeterminesLocalEdge StupidGraph Location Lives Lives where
->   type EdgeDirection StupidGraph Location Lives Lives = In
+> instance DeterminesLocalEdge StupidGraph Location Lives LivesIn where
+>   type EdgeDirection StupidGraph Location Lives LivesIn = In
+>   toEngineEdgeInformationLocal = undefined
+>
+> instance DeterminesLocalEdge StupidGraph Being Lives LivesIn where
+>   type EdgeDirection StupidGraph Being Lives LivesIn = Out
 >   toEngineEdgeInformationLocal = undefined
 
 The titan example in gremlin is as follows:
@@ -205,19 +238,141 @@ particular about our types:
 > breed IsGod _ = IsDemigod
 > breed IsHuman IsHuman = IsHuman
 > breed _ _ = IsDemigod
->
-> statusOfParents :: Being -> GraphPatterns StupidGraph (Status, Status)
-> statusOfParents being = do
+
+  hercules.out('father','mother')
+
+> parentsOf :: Being -> GraphPatterns StupidGraph (Being, Being)
+> parentsOf being = do
 >   mother <- adjacentOut (Proxy :: Proxy IsMother) IsMother being
 >   father <- adjacentOut (Proxy :: Proxy IsFather) IsFather being
->   return $ (getStatus mother, getStatus father)
->   -- ^ Note the wart on the design: we still treat everything as a list, when
->   --   we ought to hide this; we know MotherOf determines at most one vertex
->   --   so there's no need to get back a list; Maybe is more appropriate.
->   --   Note as well how the use of head completely subverts our goal of
->   --   type safety! Oh well, we'll fix this up in future developments.
+>   return (mother, father)
 >
+> lift2 :: (a -> b) -> (a, a) -> (b, b)
+> lift2 f (x, y) = (f x, f y)
+>
+> apply2 :: (a -> b -> c) -> (a, b) -> c
+> apply2 f (x, y) = f x y
+
+  hercules.out('father','mother').name
+
+> namesOfParents :: Being -> GraphPatterns StupidGraph (Name, Name)
+> namesOfParents = fmap (lift2 beingName) . parentsOf
+
+Note that what this example calls type, we call status. In our world, a type
+is not a value on the vertex.
+
+  hercules.out('father','mother').type
+
+> statusOfParents :: Being -> GraphPatterns StupidGraph (Status, Status)
+> statusOfParents = fmap (lift2 getStatus) . parentsOf
+
+Ok, we can compute this one purely, but for the sake of demonstration, we
+express it in GraphPatterns as well.
+
+  hercules.type
+
 > statusOfPerson :: Being -> GraphPatterns StupidGraph Status
-> statusOfPerson being = do
->   (motherStatus, fatherStatus) <- statusOfParents being
->   return $ motherStatus `breed` fatherStatus
+> statusOfPerson = fmap (apply2 breed) . statusOfParents
+
+Now we move away from lineage and on to violence.
+
+  hercules.out('battled')
+
+> monstersBattled :: Being -> GraphPatterns StupidGraph Monster
+> monstersBattled = adjacentOut (Proxy :: Proxy Battled) HasBattled
+
+This one doesn't really translate to our system; why ask for the map when
+we know statically what data a Monster determines?
+
+  hercules.out('battled').map
+
+> namesOfMonstersBattled :: Being -> GraphPatterns StupidGraph Name
+> namesOfMonstersBattled = fmap monsterName . monstersBattled
+
+Aha, here's a good one
+
+  hercules.outE('battled').has('time',T.gt,1).inV.name
+
+> battledRecently :: Time -> Being -> GraphPatterns StupidGraph Monster
+> battledRecently time being = do
+>   battled :: Battled <- outgoing HasBattled being
+>   -- Observe the use of MonadPlus to cast out the undesirables.
+>   guard $ timeBattled battled > time
+>   target battled
+>
+> nameOfBattledRecently :: Time -> Being -> GraphPatterns StupidGraph Name
+> nameOfBattledRecently time = fmap monsterName . battledRecently time
+
+Let's move on to the next section. This one is just like finding Hercules.
+
+  pluto = g.V('name','pluto').next()
+
+> pluto :: GraphPatterns StupidGraph Being
+> pluto = vertex (Proxy :: Proxy Being) (Name "Pluto")
+
+  pluto.out('lives').in('lives').name
+
+> roomates :: Being -> GraphPatterns StupidGraph Being
+> roomates being = do
+>   edge :: Lives <- outgoing LivesIn being
+>   location <- target edge
+>   adjacentIn (Proxy :: Proxy Lives) LivesIn location
+
+  pluto.out('lives').in('lives').except([pluto]).name
+  pluto.as('x').out('lives').in('lives').except('x').name
+
+> roomatesProper :: Being -> GraphPatterns StupidGraph Being
+> roomatesProper being = do
+>   roomate <- roomates being
+>   guard $ (beingName roomate) /= (beingName being)
+>   -- ^ No Eq on Beings, so we settle for Eq on names... which is not a good
+>   --   Eq instance, but oh well.
+>   return roomate
+
+  pluto.out('brother').out('lives').name
+
+> brothersPlace :: Being -> GraphPatterns StupidGraph Location
+> brothersPlace being = do
+>   brother <- adjacentOut (Proxy :: Proxy IsBrother) IsBrother being
+>   adjacentOut (Proxy :: Proxy Lives) LivesIn brother
+>
+> nameOfBrothersPlace :: Being -> GraphPatterns StupidGraph Name
+> nameOfBrothersPlace = fmap locationName . brothersPlace
+
+  pluto.out('brother').as('god').out('lives').as('place').select
+
+> brotherAndAbode :: Being -> GraphPatterns StupidGraph (Being, Location)
+> brotherAndAbode being = do
+>   god <- adjacentOut (Proxy :: Proxy IsBrother) IsBrother being
+>   place <- adjacentOut (Proxy :: Proxy Lives) LivesIn god
+>   return (god, place)
+
+pluto.out('brother').as('god').out('lives').as('place').select{it.name}
+
+> namesOfBrotherAndAbode :: Being -> GraphPatterns StupidGraph (Name, Name)
+> namesOfBrotherAndAbode being = do
+>   (brother, location) <- brotherAndAbode being
+>   return (beingName brother, locationName location)
+
+  pluto.outE('lives').reason
+
+> reasonForLivingThere :: Being -> GraphPatterns StupidGraph Reason
+> reasonForLivingThere being = do
+>   edge :: Lives <- outgoing LivesIn being
+>   return $ why edge
+
+  g.E.has('reason',CONTAINS,'loves')
+
+> lovesLivingThere :: GraphPatterns StupidGraph Lives
+> lovesLivingThere = edge (Proxy :: Proxy Lives) (Reason "Loves")
+
+  g.E.has('reason',CONTAINS,'loves').collect{
+      [it.outV.name.next(),it.reason,it.inV.name.next()] 
+  }
+
+> lovesLivingThere' :: GraphPatterns StupidGraph (Name, Reason, Name)
+> lovesLivingThere' = do
+>   lives <- lovesLivingThere
+>   being <- source lives
+>   location <- target lives
+>   return (beingName being, why lives, locationName location)
