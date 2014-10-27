@@ -31,6 +31,11 @@ module Data.GraphPatterns.Language (
   , hopOutgoing
   -}
 
+  , GraphMutations
+  , runGraphMutations
+  , putVertex
+  , putEdge
+
   ) where
 
 import Prelude hiding (concat)
@@ -45,6 +50,8 @@ import Control.Monad
 import Data.Traversable (traverse, Traversable)
 import Data.Foldable
 import Data.Proxy
+
+-- | We begin by defining the GraphPatterns monad for querying a graph
 
 (<*^*>) f x = (fmap (<*>) f) <*> x
 (<|^|>) x y = (fmap (<|>) x) <*> y
@@ -301,3 +308,54 @@ adjacentIn
 adjacentIn proxy d v = do
   inc :: e <- incoming d v
   source inc
+
+-- | Now we turn our attention to the GraphMutations monad for mutating a graph.
+newtype GraphMutations m a = GraphMutations (GraphPatterns m a)
+  deriving (Functor, Applicative, Monad)
+
+runGraphMutations
+  :: GraphEngine m
+  => GraphMutations m a
+  -> EngineGraph m
+  -> GPResult a
+runGraphMutations (GraphMutations x) = runGraphPatterns x
+
+putVertex
+  :: forall m v .
+     ( Vertex m v
+     )
+  => v
+  -> GraphMutations m v
+putVertex v = GraphMutations . GraphPatterns $ do
+  let engineVertex = toEngineVertex (Proxy :: Proxy m) v
+  v' :: Maybe (EngineVertex m) <- insertVertex engineVertex
+  case v' of
+    Nothing -> return $ (result . anomaly) undefined
+    Just v'' -> case fromEngineVertex (Proxy :: Proxy m) v'' of
+                  Nothing -> return $ (result . anomaly) undefined 
+                  Just (v''' :: v) -> return $ (result . noAnomaly) [v''']
+putEdge
+  :: forall m e v u .
+     ( Edge m e
+     , Vertex m v
+     , Vertex m u
+     , EdgeSource m e ~ v
+     , EdgeTarget m e ~ u
+     )
+  => e
+  -> v
+  -> u
+  -> GraphPatterns m e
+putEdge e v u = GraphPatterns $ do
+  -- TODO check edge cardinality constraints and do not insert if it's violated.
+  -- That will require doing a query before a mutation.
+  -- TBD Is it possible to offload this to the GraphEngine if it supports it?
+  let engineEdge = toEngineEdge Proxy e
+  let engineVertexV = toEngineVertex Proxy v
+  let engineVertexU = toEngineVertex Proxy u
+  (e' :: Maybe (EngineEdge m)) <- insertEdge engineEdge engineVertexV engineVertexU
+  case e' of
+    Nothing -> return $ (result . anomaly) undefined
+    Just e'' -> case fromEngineEdge (Proxy :: Proxy m) e'' of
+                  Nothing -> return $ (result . anomaly) undefined
+                  Just (e''' :: e) -> return $ (result . noAnomaly) [e''']
