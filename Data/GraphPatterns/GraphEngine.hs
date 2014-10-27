@@ -89,3 +89,11 @@ class (Functor m, Applicative m, Monad m) => GraphEngine m where
   -- | Given a Vertex, produce a list of all Edges incoming, i.e. with tail
   --   ends at the Vertex.
   getEdgesIn :: EngineEdgeInformation m -> EngineVertex m -> m [EngineEdge m]
+
+  insertVertex :: EngineVertex m -> m (Maybe (EngineVertex m))
+
+  insertEdge
+    :: EngineEdge m
+    -> EngineVertex m
+    -> EngineVertex m
+    -> m (Maybe (EngineEdge m))
