@@ -86,13 +86,12 @@ class (Functor m, Applicative m, Monad m) => GraphEngine m where
   --   ends at the Vertex.
   getEdgesIn :: EngineEdgeInformation m -> EngineVertex m -> m [EngineEdge m]
 
-  insertVertex :: EngineVertex m -> m (Maybe (EngineGraph m))
-  -- ^ Must give Just if and only if the vertex was successfully inserted.
-  --   For impure engines the EngineGraph will probably be discarded.
+  insertVertex :: EngineVertex m -> m Bool
+  -- ^ Must give True and only if the vertex was successfully inserted.
 
   insertEdge
     :: EngineEdge m
     -> EngineVertex m
     -> EngineVertex m
-    -> m (Maybe (EngineGraph m))
-  -- ^ Regarding the Maybe: same contract as for insertVertex
+    -> m Bool
+  -- ^ Regarding the Bool: same contract as for insertVertex

@@ -10,4 +10,6 @@ data Anomaly
   | EdgeTranslationAnomaly
   | VertexDeterminationAnomaly
   | EdgeDeterminationAnomaly
+  | VertexInsertionAnomaly
+  | EdgeInsertionAnomaly
     deriving (Show)

@@ -11,11 +11,14 @@
 
 module Data.GraphPatterns.Language (
 
-    GraphPatterns
-  , runGraphPatterns
+    GraphQueries
+  , runGraphQueries
+  , QueryResult
+  , runQueryResult
 
   , vertex
   , edge
+
   , incoming
   , outgoing
   , source
@@ -23,18 +26,23 @@ module Data.GraphPatterns.Language (
   , adjacentOut
   , adjacentIn
 
-  {-
-
-    TODO hopIncoming takes n hops on incoming edges of a given type.
-  , hopIncoming
-    TODO hopOutgoing takes n hops on outgoing edges of a given type.
-  , hopOutgoing
-  -}
+  --  TODO hopIncoming takes n hops on incoming edges of a given type.
+  --, hopIncoming
+  --  TODO hopOutgoing takes n hops on outgoing edges of a given type.
+  --, hopOutgoing
 
   , GraphMutations
   , runGraphMutations
   , putVertex
   , putEdge
+
+  -- TODO
+  , GraphPatterns
+  , runGraphPatterns
+  , query 
+  -- ^ injects a GraphQueries into GraphPatterns
+  , mutation
+  -- ^ injects a GraphMutations into GraphPatterns
 
   ) where
 
@@ -47,177 +55,182 @@ import Data.GraphPatterns.Types
 
 import Control.Applicative
 import Control.Monad
+
 import Data.Traversable (traverse, Traversable)
 import Data.Foldable
 import Data.Proxy
 
--- | We begin by defining the GraphPatterns monad for querying a graph
+-- | We begin with a special monad-list type, as seen in the ListT done right
+--   alternative http://www.haskell.org/haskellwiki/ListT_done_right_alternative
+newtype MList m a = MList {
+    runMList :: m (Maybe (a, MList m a))
+  }
 
+instance Functor m => Functor (MList m) where
+  fmap f = MList . (fmap . fmap) f' . runMList
+    where f' (x, next) = (f x, fmap f next)
+
+instance (Applicative m, Monad m) => Applicative (MList m) where
+  pure x = MList $ pure (Just (x, MList $ pure Nothing))
+  f <*> x = ap f x
+
+instance (Applicative m, Monad m) => Monad (MList m) where
+  return = pure
+  x >>= k = MList $ do
+    x' <- runMList x
+    case x' of
+      Nothing -> return Nothing
+      Just (x'', next) -> runMList $ (k x'') `mlistAppend` (next >>= k)
+
+mlistAppend :: Monad m => MList m a -> MList m a -> MList m a
+mlistAppend first second = MList $ do
+  head <- runMList first
+  case head of
+    Nothing -> runMList second
+    Just (h, rest) -> return $ Just (h, mlistAppend rest second)
+
+mlistEmpty :: Monad m => MList m a
+mlistEmpty = MList $ return Nothing
+
+mlistCons :: Monad m => m a -> MList m a -> MList m a
+mlistCons x rest = MList $ do
+  x' <- x
+  return $ Just (x', rest)
+
+toMList :: Monad m => [a] -> MList m a
+--toMList [] = MList $ return Nothing
+--toMList (x:xs) = MList $ return (Just (x, toMList xs))
+toMList [] = mlistEmpty
+toMList (x:xs) = mlistCons (return x) (toMList xs)
+
+fromMList :: (Applicative m, Monad m) => MList m a -> m [a]
+fromMList x = do
+  head <- runMList x
+  case head of
+    Nothing -> return []
+    Just (x', rest) -> (:) <$> return x' <*> fromMList rest
+
+-- | Lift <*> in through another applicative.
+(<*^*>) :: (Applicative m, Applicative n) => m (n (a -> b)) -> m (n a) -> m (n b)
 (<*^*>) f x = (fmap (<*>) f) <*> x
+
+-- | Lift <|> in through another alternative
+(<|^|>) :: (Alternative m, Alternative n) => m (n a) -> m (n a) -> m (n a)
 (<|^|>) x y = (fmap (<|>) x) <*> y
 
-newtype Anomalized a = Anomalized {
-    unAnomalize :: Either Anomaly a
-  } deriving (Functor, Applicative, Monad, Foldable, Traversable, Show)
+-- | The result of a query is a monad-list of values, which may be anomalies.
+--   All anomalies remain in the list, but the presence of one anomaly does not
+--   junk the entire query result.
+newtype QueryResultT m a = QueryResultT {
+    runQueryResultT :: MList m (Either Anomaly a)
+  }
 
-anomaly :: Anomaly -> Anomalized a
-anomaly = Anomalized . Left
+-- For exporting.
+type QueryResult = QueryResultT
+runQueryResult = runQueryResultT
 
-noAnomaly :: a -> Anomalized a
-noAnomaly = Anomalized . Right
+instance Functor m => Functor (QueryResultT m) where
+  fmap f = QueryResultT . (fmap . fmap) f . runQueryResultT
 
-newtype GPResult a = GPResult {
-    _unGPResult :: Anomalized [a]
-  } deriving (Functor, Foldable, Traversable)
+instance (Applicative m, Monad m) => Applicative (QueryResultT m) where
+  pure = QueryResultT . (pure . pure)
+  f <*> x = QueryResultT $ runQueryResultT f <*^*> runQueryResultT x
 
-result :: Anomalized [a] -> GPResult a
-result = GPResult
+instance (Applicative m, Monad m) => Monad (QueryResultT m) where
+  return = QueryResultT . (return . return)
+  x >>= k = QueryResultT $ do
+    x' <- runQueryResultT x
+    -- x' :: Either Anomaly a
+    mbind $ (fmap (runQueryResultT . k)) x'
 
-instance Applicative GPResult where
-  pure = GPResult . pure . pure
-  f <*> x = GPResult $ (_unGPResult f) <*^*> (_unGPResult x)
+mbind :: (Applicative m, Monad m) => Either Anomaly (MList m (Either Anomaly a)) -> MList m (Either Anomaly a)
+mbind (Left l) = return $ Left l
+mbind (Right list) = list
 
-instance Alternative GPResult where
-  empty = GPResult . pure $ empty
-  x <|> y = GPResult $ (_unGPResult x) <|^|> (_unGPResult y)
+mjoin :: Monad m
+      => MList m (Either Anomaly (MList m (Either Anomaly a)))
+      -> MList m (Either Anomaly a)
+mjoin x = MList $ do
+  x' <- runMList x
+  case x' of
+    Nothing -> return Nothing
+    Just (y, rest) -> case y of
+      -- ^ y :: Either Anomaly (MList m (Either Anomaly a))
+      --   rest :: MList m (Either Anomaly (MList m (Either Anomaly a)))
+      Left l -> runMList $ (return (Left l)) `mlistCons` (mjoin rest)
+      Right list -> runMList $ list `mlistAppend` (mjoin rest)
 
-instance Monad GPResult where
-  return = GPResult . return . return
-  x >>= k = GPResult $ do
-    ys <- _unGPResult x
-    -- ^ ys :: [a]
-    zs <- traverse (_unGPResult . k) ys
-    -- ^ za :: [[a]]
-    return $ concat zs
-    -- This monad definition is probably not what we want, but I think it'll
-    -- work for now.
 
-instance MonadPlus GPResult where
-  mzero = GPResult . return $ mzero
-  x `mplus` y = GPResult $ do
-    x' <- _unGPResult x
-    y' <- _unGPResult y
-    return $ x' `mplus` y'
+resultOk :: (Applicative m, Monad m) => [a] -> QueryResultT m a
+resultOk = QueryResultT . toMList . fmap Right
 
--- | Our EDSL as a monad (for a fixed GraphEngine).
-data GraphPatterns m a = GraphPatterns (m (GPResult a))
+resultNotOk :: (Applicative m, Monad m) => Anomaly -> QueryResultT m a
+resultNotOk = QueryResultT . return . Left
 
-unGraphPatterns :: GraphPatterns m a -> m (GPResult a)
-unGraphPatterns (GraphPatterns x) = x
+liftQ x = QueryResultT $ (fmap Right x) `mlistCons` mlistEmpty
 
--- | Given an EngineGraph we can run our GraphPatterns expression.
-runGraphPatterns
-  :: GraphEngine m
-  => GraphPatterns m a
-  -> EngineGraph m
-  -> GPResult a
-runGraphPatterns (GraphPatterns x) g = runGraphEngine x g
+-- | Our query EDSL is just a new name for the QueryResult monad, over some
+--   other monad, which in practice shall be a GraphEngine.
+newtype GraphQueries m a = GraphQueries {
+    runGraphQueries :: QueryResultT m a
+  }
 
-instance Functor m => Functor (GraphPatterns m) where
-  fmap f = GraphPatterns . ((fmap . fmap) f) . unGraphPatterns
+instance Functor m => Functor (GraphQueries m) where
+  fmap f = GraphQueries . fmap f . runGraphQueries
 
-instance Applicative m => Applicative (GraphPatterns m) where
-  pure = GraphPatterns . pure . pure
-  (<*>) f x = GraphPatterns $ (unGraphPatterns f) <*^*> (unGraphPatterns x)
+instance (Functor m, Applicative m, Monad m) => Applicative (GraphQueries m) where
+  pure = GraphQueries . pure
+  (<*>) f x = GraphQueries $ (runGraphQueries f) <*> (runGraphQueries x)
 
-instance Applicative m => Alternative (GraphPatterns m) where
-  empty = GraphPatterns . pure $ empty
-  x <|> y = GraphPatterns $ (unGraphPatterns x) <|^|> (unGraphPatterns y)
+-- How oh how do we define this monad?
+instance (Functor m, Applicative m, Monad m) => Monad (GraphQueries m) where
+  return = GraphQueries . return
+  x >>= k = GraphQueries $ do
+    y <- runGraphQueries x
+    -- ^ y :: QueryResult a
+    (runGraphQueries . k) y
 
-instance (Functor m, Applicative m, Monad m) => Monad (GraphPatterns m) where
-  return = GraphPatterns . return . return
-  x >>= k = GraphPatterns $ do
-    y <- unGraphPatterns x
-    -- ^ y :: GPResult a
-    join <$> traverse (unGraphPatterns . k) y
-    -- This monad definition is a bit dodgy as well. Must revise later.
+instance (Functor m, Applicative m, Monad m) => Alternative (GraphQueries m) where
+  empty = GraphQueries $ QueryResultT mlistEmpty
+  x <|> y = GraphQueries $ QueryResultT (x' `mlistAppend` y')
+    where x' = runQueryResultT . runGraphQueries $ x
+          y' = runQueryResultT . runGraphQueries $ y
 
-instance (Functor m, Applicative m, Monad m) => MonadPlus (GraphPatterns m) where
-  mzero = GraphPatterns . return $ mzero
-  x `mplus` y = GraphPatterns $ do
-    x' <- unGraphPatterns x
-    y' <- unGraphPatterns y
-    return $ x' `mplus` y'
+instance (Functor m, Applicative m, Monad m) => MonadPlus (GraphQueries m) where
+  mzero = GraphQueries $ QueryResultT mlistEmpty
+  mplus = (<|>)
 
 -- This is not the most general type.
-vertex :: (DeterminesVertex m d v) => Proxy v -> d -> GraphPatterns m v
-vertex vertexProxy determiner = GraphPatterns $ do
-  let vertexInfo = toEngineVertexInformation Proxy vertexProxy determiner
-  engineVertex <- getVertices vertexInfo
+vertex
+  :: forall m d v .
+     ( DeterminesVertex m d v
+     )
+  => Proxy v
+  -> d
+  -> GraphQueries m v
+vertex vertexProxy determiner = GraphQueries $ do
+  let vertexInfo = toEngineVertexInformation (Proxy :: Proxy m) vertexProxy determiner
+  engineVertices <- liftQ $ getVertices vertexInfo
+  -- Must check for a uniqueness anomaly here!!!
+  -- TODO FIXME
+  --
+  -- Here we replace all Nothings that come out of fromEngineVertex with
+  -- a VertexTranslationAnomaly.
+  QueryResultT (toMList $ fmap mapper engineVertices)
+    where mapper = maybe (Left VertexTranslationAnomaly) Right . fromEngineVertex (Proxy :: Proxy m)
 
-  -- Check for anomaly based on uniqueness...
-  -- Do we even need type-level trickery for this? Can't we just ask the
-  -- class to indicate unique or not unique at value level?
-  --let anomalized = case engineVertices of
-  --      [] -> Right []
-  --      x -> Right x
-  --
-
-  -- If any of them are Nothing, we want an anomaly.
-  -- That's to say, we want a function
-  --
-  --   Either Anomaly (Maybe a) -> Either Anomaly a
-  --
-  --   (a -> f b) -> t a -> f (t b)
-  --
-  -- Aha never mind, traverse takes care of this for us.
-  --
-  -- Hm, is there a good reason to not just use [] always, and do away with
-  -- the One, Many types? We could just check this at the data level here.
-  --
-  --   data EdgeCardinality
-  --     = OneToOne
-  --     | ManyToMany
-  --     | ManyToOne
-  --     | OneToMany
-  --
-  --   data DeterminerUniqueness = Unique | NotUnique
-  --
-  -- and then have
-  --
-  --   (DeterminesVertex m d v) => Proxy m -> Proxy d -> Proxy v -> DeterminerUniqueness
-  --   (Edge m e) => Proxy m -> Proxy e -> EdgeCardinality
-  --
-  -- Hm, yeah, either way we need type-level trickery, with all of those proxies.
-  -- The alternative is to stick another clause in the type signature of this
-  -- function vertex, saying that the output is
-  --
-  --   (ResultsWrapper t) => Anomalized (t v)
-  --
-  -- and we have
-  --
-  --   handleUniquenessAnomaly :: ResultWrapper t => Uniqueness -> [v] -> Anomalized (t v)
-  --   handleUniquenessAnomaly True (x : y : _) = Left _
-  --   handleUniquenessAnomaly True x = Right (One (Just x))
-  --   handleUniquenessAnomaly False xs = Right (Many xs)
-  --
-  -- Yeah we can't implement that; the type system just won't allow it, even
-  -- though One and Many are both ResultWrappers.
-  --
-  -- What we _really_ need are
-  --
-  --   vertexUniquenessAnomaly :: ResultWrapper t => [v] -> Anomalized (t v)
-  --   edgeUniquenessAnomaly :: ResultWrapper t => [e] -> Anomalized (t e)
-  --   edgeCardinalityAnomaly :: ResultWrapper t => [v] -> Anomalized (t v)
-  --
-  -- The uniqueness constraints take more, requires the type of the determiner
-  -- and of course the graph engine.
-  --
-  --   vertexUniquenessAnomaly :: (DeterminesVertex m d v, ResultWrapper t)
-  --     => Proxy m -> Proxy d -> [v] -> Anomalized (t v)
-  --
-  case traverse (fromEngineVertex Proxy) engineVertex of
-    -- TODO make an anomaly.
-    Nothing -> return $ (result . anomaly) VertexTranslationAnomaly
-    Just x -> return $ (result . noAnomaly) x
-
-edge :: (DeterminesEdge m d e) => Proxy e -> d -> GraphPatterns m e
-edge edgeProxy determiner = GraphPatterns $ do
-  let edgeInfo = toEngineEdgeInformation Proxy edgeProxy determiner
-  engineEdge <- getEdges edgeInfo
-  case traverse (fromEngineEdge Proxy) engineEdge of
-    Nothing -> return $ (result . anomaly) EdgeTranslationAnomaly
-    Just x -> return $ (result . noAnomaly) x
+edge
+  :: forall m d e .
+     ( DeterminesEdge m d e
+     )
+  => Proxy e
+  -> d
+  -> GraphQueries m e
+edge edgeProxy determiner = GraphQueries $ do
+  let edgeInfo = toEngineEdgeInformation (Proxy :: Proxy m) edgeProxy determiner
+  engineEdges <- liftQ $ getEdges edgeInfo
+  QueryResultT (toMList $ fmap mapper engineEdges)
+    where mapper = maybe (Left EdgeTranslationAnomaly) Right . fromEngineEdge (Proxy :: Proxy m)
 
 incoming
   :: forall m e v d .
@@ -228,13 +241,13 @@ incoming
      )
   => d
   -> v
-  -> GraphPatterns m e
-incoming determiner v = GraphPatterns $ do
+  -> GraphQueries m e
+incoming determiner v = GraphQueries $ do
   let edgeInfo = toEngineEdgeInformationLocal Proxy (Proxy :: Proxy v) (Proxy :: Proxy e) determiner
-  engineEdge <- getEdgesIn edgeInfo (toEngineVertex Proxy v)
-  case traverse (fromEngineEdge Proxy) engineEdge of
-    Nothing -> return $ (result . anomaly) EdgeTranslationAnomaly
-    Just x -> return $ (result . noAnomaly) x
+  engineEdges <- liftQ $ getEdgesIn edgeInfo (toEngineVertex Proxy v)
+  -- TODO FIXME check for edge cardinality anomaly
+  QueryResultT (toMList $ fmap mapper engineEdges)
+    where mapper = maybe (Left EdgeTranslationAnomaly) Right . fromEngineEdge (Proxy :: Proxy m)
 
 outgoing
   :: forall m e v d .
@@ -245,39 +258,39 @@ outgoing
      )
   => d
   -> v
-  -> GraphPatterns m e
-outgoing determiner v = GraphPatterns $ do
+  -> GraphQueries m e
+outgoing determiner v = GraphQueries $ do
   let edgeInfo = toEngineEdgeInformationLocal Proxy (Proxy :: Proxy v) (Proxy :: Proxy e) determiner
-  engineEdge <- getEdgesIn edgeInfo (toEngineVertex Proxy v)
-  case traverse (fromEngineEdge Proxy) engineEdge of
-    Nothing -> return $ (result . anomaly) EdgeTranslationAnomaly
-    Just x -> return $ (result . noAnomaly) x
+  engineEdges <- liftQ $ getEdgesIn edgeInfo (toEngineVertex Proxy v)
+  -- TODO FIXME check for edge cardinaltiy anomaly
+  QueryResultT (toMList $ fmap mapper engineEdges)
+    where mapper = maybe (Left EdgeTranslationAnomaly) Right . fromEngineEdge (Proxy :: Proxy m)
 
 source
   :: forall m e .
      ( Edge m e
      )
   => e
-  -> GraphPatterns m (EdgeSource m e)
-source edge = GraphPatterns $ do
+  -> GraphQueries m (EdgeSource m e)
+source edge = GraphQueries $ do
   let engineEdge = toEngineEdge (Proxy :: Proxy m) edge
-  engineSourceVertex <- getSourceVertex engineEdge
+  engineSourceVertex <- liftQ $ getSourceVertex engineEdge
   case fromEngineVertex (Proxy :: Proxy m) engineSourceVertex of
-    Nothing -> return $ (result . anomaly) VertexTranslationAnomaly
-    Just (x :: EdgeSource m e) -> return $ (result . noAnomaly) [x]
+    Nothing -> resultNotOk VertexTranslationAnomaly
+    Just (x :: EdgeSource m e) -> resultOk [x]
 
 target
   :: forall m e .
      ( Edge m e
      )
   => e
-  -> GraphPatterns m (EdgeTarget m e)
-target edge = GraphPatterns $ do
+  -> GraphQueries m (EdgeTarget m e)
+target edge = GraphQueries $ do
   let engineEdge = toEngineEdge Proxy edge
-  engineTargetVertex <- getTargetVertex engineEdge
+  engineTargetVertex <- liftQ $ getTargetVertex engineEdge
   case fromEngineVertex (Proxy :: Proxy m) engineTargetVertex of
-    Nothing -> return $ (result . anomaly) VertexTranslationAnomaly
-    Just (x :: EdgeTarget m e) -> return $ (result . noAnomaly) [x]
+    Nothing -> resultNotOk VertexTranslationAnomaly
+    Just (x :: EdgeTarget m e) -> resultOk [x]
 
 adjacentOut
   :: forall m e d .
@@ -290,7 +303,7 @@ adjacentOut
   -- Can't wrap my head around this witchcraft.
   -> d
   -> EdgeSource m e
-  -> GraphPatterns m (EdgeTarget m e)
+  -> GraphQueries m (EdgeTarget m e)
 adjacentOut proxy d v = do
   outg :: e <- outgoing d v
   -- ^ This type annotation is essential; without it we get ambiguity!
@@ -304,36 +317,74 @@ adjacentIn
   => Proxy e
   -> d
   -> EdgeTarget m e
-  -> GraphPatterns m (EdgeSource m e)
+  -> GraphQueries m (EdgeSource m e)
 adjacentIn proxy d v = do
   inc :: e <- incoming d v
   source inc
 
 -- | Now we turn our attention to the GraphMutations monad for mutating a graph.
-newtype GraphMutations m a = GraphMutations (GraphPatterns m a)
-  deriving (Functor, Applicative, Monad)
+--   This monad is also a GraphQueries monad, but with an added bonus: when
+--   you run it, you get an EngineGraph as well. This is useful for pure
+--   GraphEngines; without it, the mutations could never be observed outside
+--   of the GraphMutations monad.
+--
+--   One option: define a new Monad, and then injections which allow us to
+--   update the graph uniformly for all branches of the GPResult's underlying
+--   list.
+--   Another option (maybe?): define the mutations monad separately, without
+--   querying capabilities, and then take their product?
+--
+--   Hm, why not just StateT over GraphQueries!?!?!?!?!?!
+--   Nope, that's not what we want... well, maybe it is? The issue is that
+--   the stateful part cannot be used by the GraphQueries reader monad. That
+--   means that the reads cannot use writes which have been expressed in the
+--   same monadic value. Is this what we want?
 
-runGraphMutations
-  :: GraphEngine m
-  => GraphMutations m a
-  -> EngineGraph m
-  -> GPResult a
-runGraphMutations (GraphMutations x) = runGraphPatterns x
+-- Ok new plan. Start with the monad which can do only mutations.
+-- And suppose we have this. Then what? It's not so obvious how to make a monad
+-- out of the two, which can do updates AND queries. Isn't there such a thing
+-- as a product monad? Yes, of course, so we can just take
+--   
+--   newtype GraphPatterns m a = GraphPatterns {
+--       _unGraphPatterns :: Product (GraphQueries m) (GraphMutations m) a
+--     } deriving (Functor, Applicative, Monad)
+--
+--newtype GraphMutations s m a = GraphMutations {
+--    _unGraphMutations :: StateT s (EitherT m) a
+--  } deriving (Functor, Applicative, Monad)
+
+newtype GraphMutations m a = GraphMutations {
+    runGraphMutations :: m (Either Anomaly a)
+  }
+
+instance Functor m => Functor (GraphMutations m) where
+  fmap f = GraphMutations . (fmap . fmap) f . runGraphMutations
+
+instance (Applicative m, Monad m) => Applicative (GraphMutations m) where
+  pure = GraphMutations . pure . pure
+  f <*> x = GraphMutations $ runGraphMutations f <*^*> runGraphMutations x
+
+instance (Applicative m, Monad m) => Monad (GraphMutations m) where
+  return = GraphMutations . return . return
+  x >>= k = GraphMutations $ do
+    x' <- runGraphMutations x
+    case x' of
+      Left l -> return $ Left l
+      Right x'' -> runGraphMutations $ k x''
 
 putVertex
   :: forall m v .
      ( Vertex m v
      )
   => v
-  -> GraphMutations m v
-putVertex v = GraphMutations . GraphPatterns $ do
+  -> GraphMutations m ()
+putVertex v = GraphMutations $ do
   let engineVertex = toEngineVertex (Proxy :: Proxy m) v
-  v' :: Maybe (EngineVertex m) <- insertVertex engineVertex
-  case v' of
-    Nothing -> return $ (result . anomaly) undefined
-    Just v'' -> case fromEngineVertex (Proxy :: Proxy m) v'' of
-                  Nothing -> return $ (result . anomaly) undefined 
-                  Just (v''' :: v) -> return $ (result . noAnomaly) [v''']
+  b <- insertVertex engineVertex
+  case b of
+    False -> return $ Left VertexInsertionAnomaly
+    True -> return $ Right ()
+
 putEdge
   :: forall m e v u .
      ( Edge m e
@@ -345,17 +396,34 @@ putEdge
   => e
   -> v
   -> u
-  -> GraphPatterns m e
-putEdge e v u = GraphPatterns $ do
+  -> GraphMutations m ()
+putEdge e v u = GraphMutations $ do
   -- TODO check edge cardinality constraints and do not insert if it's violated.
   -- That will require doing a query before a mutation.
   -- TBD Is it possible to offload this to the GraphEngine if it supports it?
   let engineEdge = toEngineEdge Proxy e
   let engineVertexV = toEngineVertex Proxy v
   let engineVertexU = toEngineVertex Proxy u
-  (e' :: Maybe (EngineEdge m)) <- insertEdge engineEdge engineVertexV engineVertexU
-  case e' of
-    Nothing -> return $ (result . anomaly) undefined
-    Just e'' -> case fromEngineEdge (Proxy :: Proxy m) e'' of
-                  Nothing -> return $ (result . anomaly) undefined
-                  Just (e''' :: e) -> return $ (result . noAnomaly) [e''']
+  success <- insertEdge engineEdge engineVertexV engineVertexU
+  case success of
+    False -> return $ Left EdgeInsertionAnomaly
+    True -> return $ Right ()
+
+-- | The all-powerful GraphPatterns monad is just GraphQueries with injectors
+--   for GraphQueries and GraphMutations.
+--   NB your GraphMutations happen in each branch of the query!
+newtype GraphPatterns m a = GraphPatterns {
+    unGraphPatterns :: GraphQueries m a
+  } deriving (Functor, Applicative, Monad, Alternative, MonadPlus)
+
+type GraphPatternsResult = QueryResultT
+
+query :: GraphQueries m a -> GraphPatterns m a
+query = GraphPatterns
+
+mutation :: Monad m => GraphMutations m a -> GraphPatterns m a
+mutation m = GraphPatterns . GraphQueries . QueryResultT $ x
+  where x = mlistCons (runGraphMutations m) mlistEmpty
+
+runGraphPatterns :: GraphPatterns m a -> GraphPatternsResult m a
+runGraphPatterns = runGraphQueries . unGraphPatterns
