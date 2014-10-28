@@ -44,10 +44,6 @@ class (Functor m, Applicative m, Monad m) => GraphEngine m where
   -- | Type of (possibly partial) edge information.
   data EngineEdgeInformation m :: *
 
-  -- | Must supply a Graph in order to get any information out of the
-  --   GraphEngine. This function witnesses that it can be done.
-  runGraphEngine :: m a -> EngineGraph m -> a
-
   -- | Get the vertex to which an edge goes in (head of edge is here).
   getTargetVertex :: EngineEdge m -> m (EngineVertex m)
 
@@ -90,10 +86,13 @@ class (Functor m, Applicative m, Monad m) => GraphEngine m where
   --   ends at the Vertex.
   getEdgesIn :: EngineEdgeInformation m -> EngineVertex m -> m [EngineEdge m]
 
-  insertVertex :: EngineVertex m -> m (Maybe (EngineVertex m))
+  insertVertex :: EngineVertex m -> m (Maybe (EngineGraph m))
+  -- ^ Must give Just if and only if the vertex was successfully inserted.
+  --   For impure engines the EngineGraph will probably be discarded.
 
   insertEdge
     :: EngineEdge m
     -> EngineVertex m
     -> EngineVertex m
-    -> m (Maybe (EngineEdge m))
+    -> m (Maybe (EngineGraph m))
+  -- ^ Regarding the Maybe: same contract as for insertVertex
