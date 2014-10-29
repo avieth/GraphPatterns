@@ -206,12 +206,12 @@ The titan example in gremlin is as follows:
 but check out how this can be expressed in GraphPatterns:
 
 > -- We can grab everybody named Hercules
-> herculesByName :: GraphPatterns StupidGraph Being
+> herculesByName :: GraphQueries StupidGraph Being
 > herculesByName = vertex (Proxy :: Proxy Being) (Name "Hercules")
 >
 > -- Or we can grab everybody named Saturn and find their grandchildren.
 > -- Hercules should be in there :)
-> herculesByGrandfather :: GraphPatterns StupidGraph Being
+> herculesByGrandfather :: GraphQueries StupidGraph Being
 > herculesByGrandfather = do
 >   saturn <- vertex (Proxy :: Proxy Being) (Name "Saturn")
 >   adjacentIn (Proxy :: Proxy IsFather) IsFather saturn
@@ -242,7 +242,7 @@ particular about our types:
 
   hercules.out('father','mother')
 
-> parentsOf :: Being -> GraphPatterns StupidGraph (Being, Being)
+> parentsOf :: Being -> GraphQueries StupidGraph (Being, Being)
 > parentsOf being = do
 >   mother <- adjacentOut (Proxy :: Proxy IsMother) IsMother being
 >   father <- adjacentOut (Proxy :: Proxy IsFather) IsFather being
@@ -256,7 +256,7 @@ particular about our types:
 
   hercules.out('father','mother').name
 
-> namesOfParents :: Being -> GraphPatterns StupidGraph (Name, Name)
+> namesOfParents :: Being -> GraphQueries StupidGraph (Name, Name)
 > namesOfParents = fmap (lift2 beingName) . parentsOf
 
 Note that what this example calls type, we call status. In our world, a type
@@ -264,7 +264,7 @@ is not a value on the vertex.
 
   hercules.out('father','mother').type
 
-> statusOfParents :: Being -> GraphPatterns StupidGraph (Status, Status)
+> statusOfParents :: Being -> GraphQueries StupidGraph (Status, Status)
 > statusOfParents = fmap (lift2 getStatus) . parentsOf
 
 Ok, we can compute this one purely, but for the sake of demonstration, we
@@ -272,14 +272,14 @@ express it in GraphPatterns as well.
 
   hercules.type
 
-> statusOfPerson :: Being -> GraphPatterns StupidGraph Status
+> statusOfPerson :: Being -> GraphQueries StupidGraph Status
 > statusOfPerson = fmap (apply2 breed) . statusOfParents
 
 Now we move away from lineage and on to violence.
 
   hercules.out('battled')
 
-> monstersBattled :: Being -> GraphPatterns StupidGraph Monster
+> monstersBattled :: Being -> GraphQueries StupidGraph Monster
 > monstersBattled = adjacentOut (Proxy :: Proxy Battled) HasBattled
 
 This one doesn't really translate to our system; why ask for the map when
@@ -287,33 +287,33 @@ we know statically what data a Monster determines?
 
   hercules.out('battled').map
 
-> namesOfMonstersBattled :: Being -> GraphPatterns StupidGraph Name
+> namesOfMonstersBattled :: Being -> GraphQueries StupidGraph Name
 > namesOfMonstersBattled = fmap monsterName . monstersBattled
 
 Aha, here's a good one
 
   hercules.outE('battled').has('time',T.gt,1).inV.name
 
-> battledRecently :: Time -> Being -> GraphPatterns StupidGraph Monster
+> battledRecently :: Time -> Being -> GraphQueries StupidGraph Monster
 > battledRecently time being = do
 >   battled :: Battled <- outgoing HasBattled being
 >   -- Observe the use of MonadPlus to cast out the undesirables.
 >   guard $ timeBattled battled > time
 >   target battled
 >
-> nameOfBattledRecently :: Time -> Being -> GraphPatterns StupidGraph Name
+> nameOfBattledRecently :: Time -> Being -> GraphQueries StupidGraph Name
 > nameOfBattledRecently time = fmap monsterName . battledRecently time
 
 Let's move on to the next section. This one is just like finding Hercules.
 
   pluto = g.V('name','pluto').next()
 
-> pluto :: GraphPatterns StupidGraph Being
+> pluto :: GraphQueries StupidGraph Being
 > pluto = vertex (Proxy :: Proxy Being) (Name "Pluto")
 
   pluto.out('lives').in('lives').name
 
-> roomates :: Being -> GraphPatterns StupidGraph Being
+> roomates :: Being -> GraphQueries StupidGraph Being
 > roomates being = do
 >   edge :: Lives <- outgoing LivesIn being
 >   location <- target edge
@@ -322,7 +322,7 @@ Let's move on to the next section. This one is just like finding Hercules.
   pluto.out('lives').in('lives').except([pluto]).name
   pluto.as('x').out('lives').in('lives').except('x').name
 
-> roomatesProper :: Being -> GraphPatterns StupidGraph Being
+> roomatesProper :: Being -> GraphQueries StupidGraph Being
 > roomatesProper being = do
 >   roomate <- roomates being
 >   guard $ (beingName roomate) /= (beingName being)
@@ -332,17 +332,17 @@ Let's move on to the next section. This one is just like finding Hercules.
 
   pluto.out('brother').out('lives').name
 
-> brothersPlace :: Being -> GraphPatterns StupidGraph Location
+> brothersPlace :: Being -> GraphQueries StupidGraph Location
 > brothersPlace being = do
 >   brother <- adjacentOut (Proxy :: Proxy IsBrother) IsBrother being
 >   adjacentOut (Proxy :: Proxy Lives) LivesIn brother
 >
-> nameOfBrothersPlace :: Being -> GraphPatterns StupidGraph Name
+> nameOfBrothersPlace :: Being -> GraphQueries StupidGraph Name
 > nameOfBrothersPlace = fmap locationName . brothersPlace
 
   pluto.out('brother').as('god').out('lives').as('place').select
 
-> brotherAndAbode :: Being -> GraphPatterns StupidGraph (Being, Location)
+> brotherAndAbode :: Being -> GraphQueries StupidGraph (Being, Location)
 > brotherAndAbode being = do
 >   god <- adjacentOut (Proxy :: Proxy IsBrother) IsBrother being
 >   place <- adjacentOut (Proxy :: Proxy Lives) LivesIn god
@@ -350,28 +350,28 @@ Let's move on to the next section. This one is just like finding Hercules.
 
 pluto.out('brother').as('god').out('lives').as('place').select{it.name}
 
-> namesOfBrotherAndAbode :: Being -> GraphPatterns StupidGraph (Name, Name)
+> namesOfBrotherAndAbode :: Being -> GraphQueries StupidGraph (Name, Name)
 > namesOfBrotherAndAbode being = do
 >   (brother, location) <- brotherAndAbode being
 >   return (beingName brother, locationName location)
 
   pluto.outE('lives').reason
 
-> reasonForLivingThere :: Being -> GraphPatterns StupidGraph Reason
+> reasonForLivingThere :: Being -> GraphQueries StupidGraph Reason
 > reasonForLivingThere being = do
 >   edge :: Lives <- outgoing LivesIn being
 >   return $ why edge
 
   g.E.has('reason',CONTAINS,'loves')
 
-> lovesLivingThere :: GraphPatterns StupidGraph Lives
+> lovesLivingThere :: GraphQueries StupidGraph Lives
 > lovesLivingThere = edge (Proxy :: Proxy Lives) (Reason "Loves")
 
   g.E.has('reason',CONTAINS,'loves').collect{
       [it.outV.name.next(),it.reason,it.inV.name.next()] 
   }
 
-> lovesLivingThere' :: GraphPatterns StupidGraph (Name, Reason, Name)
+> lovesLivingThere' :: GraphQueries StupidGraph (Name, Reason, Name)
 > lovesLivingThere' = do
 >   lives <- lovesLivingThere
 >   being <- source lives
