@@ -41,12 +41,10 @@ class
   -- edges of this type can be out-incident with an EdgeSource. If it's single
   -- then we know 
   type EdgeCardinalityTarget m e :: *
-
   -- ^ How many targets? Multi or Single?
-  toEngineEdge :: Proxy m -> e -> EngineEdge m
-  -- ^ We give the first parameter so that we can disambiguate.
-  fromEngineEdge :: Proxy m -> EngineEdge m -> Maybe e
-  -- ^ Wrap in maybe because the embedding may not be a bijection.
+
+  toEngineEdgeInsertion :: e -> EngineEdgeInsertion m e
+  fromEngineEdge :: EngineEdge m e -> Maybe e
 
 -- With an instance of this class we assert that a given type d can be used
 -- to pick out a bunch of edges in a graph without using topological properties
@@ -59,7 +57,7 @@ class (GraphEngine m, Edge m e) => DeterminesEdge m d e where
     :: Proxy m
     -> Proxy e
     -> d
-    -> EngineEdgeInformation m
+    -> EngineEdgeInformation m e
 
 -- With an instance of this class we assert that a type d indicates some local
 -- edge properties at vertices of type v, for one type of edge e.
@@ -106,7 +104,7 @@ class
     -> Proxy v
     -> Proxy e
     -> determiner
-    -> EngineEdgeInformation m
+    -> EngineEdgeInformation m e
 
 -- TBD any way to do this without getting duplicates, without requiring
 -- flexible instances?
