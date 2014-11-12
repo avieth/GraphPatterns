@@ -13,6 +13,8 @@ alternatives in GraphPatterns.
 > import Data.GraphPatterns.Vertex
 > import Data.GraphPatterns.Language
 >
+> import Data.GraphPatterns.Engines.FunctionalGraph
+>
 > import Data.Proxy
 >
 > -- Shouldn't be needed, but we have no engines so we just define StupidEngine.
@@ -21,17 +23,11 @@ alternatives in GraphPatterns.
 > import Control.Applicative
 > import Control.Monad
 > import Data.Traversable (traverse)
+> import Data.Map as M
 
-First things first: let's describe our types. We need a GraphEngine but since
-we're not interested in actually doing any work, just describing it, we'll
-use the unimplemented StupidGraph.
+First things first: let's describe our types and describe their properties
+within a graph.
 
-> data StupidGraph a = StupidGraph
-> instance Functor StupidGraph
-> instance Applicative StupidGraph
-> instance Monad StupidGraph
-> instance GraphEngine StupidGraph
->
 > newtype Name = Name String
 >   deriving (Eq)
 > type Age = Integer
@@ -85,118 +81,115 @@ use the unimplemented StupidGraph.
 > data HasBattled = HasBattled
 > data LivesIn = LivesIn
 >
-> -- Proof that our vertex types are actually vertices in StupidGraph.
+> -- Proof that our vertex types are actually vertices in FunctionalGraph.
 > -- We don't care about values right now (only types) so we leave it undefined.
-> instance Vertex StupidGraph Being where
->   toEngineVertex = undefined
->   fromEngineVertex = undefined
+> instance Vertex FunctionalGraph Being where
+>   fromEngineVertex (FGVertex (_, v)) = undefined
+>   toEngineVertexInsertion b = undefined
 >
-> instance Vertex StupidGraph Monster where
->   toEngineVertex = undefined
->   fromEngineVertex = undefined
->
-> instance Vertex StupidGraph Location where
->   toEngineVertex = undefined
->   fromEngineVertex = undefined
->
-> -- A Name determines possibly many Beings.
-> instance DeterminesVertex StupidGraph Name Being where
->   type VertexUniqueness StupidGraph Name Being = NotUnique
+> instance DeterminesVertex FunctionalGraph Being Being where
+>   type VertexUniqueness FunctionalGraph Being Being = NotUnique
 >   toEngineVertexInformation = undefined
 >
-> instance DeterminesEdge StupidGraph Reason Lives where
->   type EdgeUniqueness StupidGraph Reason Lives = NotUnique
+
+FGVertexInsertion map
+     where map = M.fromlist [
+                   , ("type", beingType b)
+                   , ("name", beingName b)
+                   , ("age", show $ beingAge b)
+                   ]
+
+>
+> instance Vertex FunctionalGraph Monster
+>
+> instance Vertex FunctionalGraph Location
+>
+> -- A Name determines possibly many Beings.
+> instance DeterminesVertex FunctionalGraph Name Being where
+>   type VertexUniqueness FunctionalGraph Name Being = NotUnique
+>   toEngineVertexInformation = undefined
+>
+> instance DeterminesEdge FunctionalGraph Reason Lives where
+>   type EdgeUniqueness FunctionalGraph Reason Lives = NotUnique
 >   toEngineEdgeInformation = undefined
 >
-> -- Proof that our edge types are indeed edges in StupidGraph. Again, we leave
+> -- Proof that our edge types are indeed edges in FunctionalGraph. Again, we leave
 > -- the implementation undefined.
-> instance Edge StupidGraph IsFather where
->   type EdgeSource StupidGraph IsFather = Being
->   type EdgeTarget StupidGraph IsFather = Being
->   type EdgeCardinalitySource StupidGraph IsFather = Single
->   type EdgeCardinalityTarget StupidGraph IsFather = Multi
+> instance Edge FunctionalGraph IsFather where
+>   type EdgeSource FunctionalGraph IsFather = Being
+>   type EdgeTarget FunctionalGraph IsFather = Being
+>   type EdgeCardinalitySource FunctionalGraph IsFather = Single
+>   type EdgeCardinalityTarget FunctionalGraph IsFather = Multi
 >   -- ^ These cardinalities tell us that the target of an IsFather edge can
 >   -- have more than one in-incident IsFather edge, but that the source has
 >   -- at most one out-incident IsFather edge.
->   toEngineEdge = undefined
->   fromEngineEdge = undefined
 >
-> instance Edge StupidGraph IsMother where
->   type EdgeSource StupidGraph IsMother = Being
->   type EdgeTarget StupidGraph IsMother = Being
->   type EdgeCardinalitySource StupidGraph IsMother = Single
->   type EdgeCardinalityTarget StupidGraph IsMother  = Multi
->   toEngineEdge = undefined
->   fromEngineEdge = undefined
+> instance Edge FunctionalGraph IsMother where
+>   type EdgeSource FunctionalGraph IsMother = Being
+>   type EdgeTarget FunctionalGraph IsMother = Being
+>   type EdgeCardinalitySource FunctionalGraph IsMother = Single
+>   type EdgeCardinalityTarget FunctionalGraph IsMother  = Multi
 >
-> instance Edge StupidGraph IsBrother where
->   type EdgeSource StupidGraph IsBrother = Being
->   type EdgeTarget StupidGraph IsBrother = Being
->   type EdgeCardinalitySource StupidGraph IsBrother = Multi
->   type EdgeCardinalityTarget StupidGraph IsBrother = Multi
+> instance Edge FunctionalGraph IsBrother where
+>   type EdgeSource FunctionalGraph IsBrother = Being
+>   type EdgeTarget FunctionalGraph IsBrother = Being
+>   type EdgeCardinalitySource FunctionalGraph IsBrother = Multi
+>   type EdgeCardinalityTarget FunctionalGraph IsBrother = Multi
 >   -- ^ Unlike IsMother or IsFather, one can have many brothers, and many
 >   -- people can have the same being as a brother. This is a many-to-many
 >   -- edge.
->   toEngineEdge = undefined
->   fromEngineEdge = undefined
 >
-> instance Edge StupidGraph IsPet where
->   type EdgeSource StupidGraph IsPet = Being
->   type EdgeTarget StupidGraph IsPet = Monster
->   type EdgeCardinalitySource StupidGraph IsPet  = Multi
->   type EdgeCardinalityTarget StupidGraph IsPet = Multi
+> instance Edge FunctionalGraph IsPet where
+>   type EdgeSource FunctionalGraph IsPet = Being
+>   type EdgeTarget FunctionalGraph IsPet = Monster
+>   type EdgeCardinalitySource FunctionalGraph IsPet  = Multi
+>   type EdgeCardinalityTarget FunctionalGraph IsPet = Multi
 >   -- ^ We declare that a pet can have multiple owners.
->   toEngineEdge = undefined
->   fromEngineEdge = undefined
 >
-> instance Edge StupidGraph Battled where
->   type EdgeSource StupidGraph Battled = Being
->   type EdgeTarget StupidGraph Battled = Monster
->   type EdgeCardinalitySource StupidGraph Battled = Multi
->   type EdgeCardinalityTarget StupidGraph Battled = Multi
+> instance Edge FunctionalGraph Battled where
+>   type EdgeSource FunctionalGraph Battled = Being
+>   type EdgeTarget FunctionalGraph Battled = Monster
+>   type EdgeCardinalitySource FunctionalGraph Battled = Multi
+>   type EdgeCardinalityTarget FunctionalGraph Battled = Multi
 >   -- ^ A being can battle many monsters, and a monster can be battled by many
 >   -- beings.
->   toEngineEdge = undefined
->   fromEngineEdge = undefined
 >
-> instance Edge StupidGraph Lives where
->   type EdgeSource StupidGraph Lives = Being
->   type EdgeTarget StupidGraph Lives = Location
->   type EdgeCardinalitySource StupidGraph Lives = Single
->   type EdgeCardinalityTarget StupidGraph Lives = Multi
+> instance Edge FunctionalGraph Lives where
+>   type EdgeSource FunctionalGraph Lives = Being
+>   type EdgeTarget FunctionalGraph Lives = Location
+>   type EdgeCardinalitySource FunctionalGraph Lives = Single
+>   type EdgeCardinalityTarget FunctionalGraph Lives = Multi
 >   -- ^ A being lives only in one place (lives, not lived) but many beings
 >   -- can live in one place.
->   toEngineEdge = undefined
->   fromEngineEdge = undefined
 >
 > -- The type IsFather determines IsFather edges going into or out of a Being.
-> instance DeterminesLocalEdge StupidGraph Being IsFather IsFather where
->   type EdgeDirection StupidGraph Being IsFather IsFather = Both
+> instance DeterminesLocalEdge FunctionalGraph Being IsFather IsFather where
+>   type EdgeDirection FunctionalGraph Being IsFather IsFather = Both
 >   toEngineEdgeInformationLocal = undefined
 >
 > -- The type IsMother determines IsMother edges going into or out of a Being
-> instance DeterminesLocalEdge StupidGraph Being IsMother IsMother where
->   type EdgeDirection StupidGraph Being IsMother IsMother = Both
+> instance DeterminesLocalEdge FunctionalGraph Being IsMother IsMother where
+>   type EdgeDirection FunctionalGraph Being IsMother IsMother = Both
 >   toEngineEdgeInformationLocal = undefined
 >
-> instance DeterminesLocalEdge StupidGraph Being IsBrother IsBrother where
->   type EdgeDirection StupidGraph Being IsBrother IsBrother = Both
+> instance DeterminesLocalEdge FunctionalGraph Being IsBrother IsBrother where
+>   type EdgeDirection FunctionalGraph Being IsBrother IsBrother = Both
 >   toEngineEdgeInformationLocal = undefined
 >
-> instance DeterminesLocalEdge StupidGraph Being IsPet IsPet where
->   type EdgeDirection StupidGraph Being IsPet IsPet = Out
+> instance DeterminesLocalEdge FunctionalGraph Being IsPet IsPet where
+>   type EdgeDirection FunctionalGraph Being IsPet IsPet = Out
 >   toEngineEdgeInformationLocal = undefined
 >
-> instance DeterminesLocalEdge StupidGraph Being Battled HasBattled where
->   type EdgeDirection StupidGraph Being Battled HasBattled = Out
+> instance DeterminesLocalEdge FunctionalGraph Being Battled HasBattled where
+>   type EdgeDirection FunctionalGraph Being Battled HasBattled = Out
 >   toEngineEdgeInformationLocal = undefined
 
-> instance DeterminesLocalEdge StupidGraph Location Lives LivesIn where
->   type EdgeDirection StupidGraph Location Lives LivesIn = In
+> instance DeterminesLocalEdge FunctionalGraph Location Lives LivesIn where
+>   type EdgeDirection FunctionalGraph Location Lives LivesIn = In
 >   toEngineEdgeInformationLocal = undefined
 >
-> instance DeterminesLocalEdge StupidGraph Being Lives LivesIn where
->   type EdgeDirection StupidGraph Being Lives LivesIn = Out
+> instance DeterminesLocalEdge FunctionalGraph Being Lives LivesIn where
+>   type EdgeDirection FunctionalGraph Being Lives LivesIn = Out
 >   toEngineEdgeInformationLocal = undefined
 
 The titan example in gremlin is as follows:
@@ -206,15 +199,15 @@ The titan example in gremlin is as follows:
 but check out how this can be expressed in GraphPatterns:
 
 > -- We can grab everybody named Hercules
-> herculesByName :: GraphQueries StupidGraph Being
-> herculesByName = vertex (Proxy :: Proxy Being) (Name "Hercules")
+> herculesByName :: GraphQueries FunctionalGraph Being
+> herculesByName = v <$> vertex (Proxy :: Proxy Being) (Name "Hercules")
 >
 > -- Or we can grab everybody named Saturn and find their grandchildren.
 > -- Hercules should be in there :)
-> herculesByGrandfather :: GraphQueries StupidGraph Being
+> herculesByGrandfather :: GraphQueries FunctionalGraph Being
 > herculesByGrandfather = do
 >   saturn <- vertex (Proxy :: Proxy Being) (Name "Saturn")
->   adjacentIn (Proxy :: Proxy IsFather) IsFather saturn
+>   v <$> adjacentIn (Proxy :: Proxy IsFather) IsFather saturn
 >   --fmap concat $ traverse (adjacentIn (Proxy :: Proxy IsFather) IsFather) saturns
 
 We now wish to prove that Hercules is a demigod.
@@ -242,10 +235,11 @@ particular about our types:
 
   hercules.out('father','mother')
 
-> parentsOf :: Being -> GraphQueries StupidGraph (Being, Being)
+> parentsOf :: Being -> GraphQueries FunctionalGraph (Being, Being)
 > parentsOf being = do
->   mother <- adjacentOut (Proxy :: Proxy IsMother) IsMother being
->   father <- adjacentOut (Proxy :: Proxy IsFather) IsFather being
+>   beingVertex <- vertex (Proxy :: Proxy Being) being
+>   mother <- v <$> adjacentOut (Proxy :: Proxy IsMother) IsMother beingVertex
+>   father <- v <$> adjacentOut (Proxy :: Proxy IsFather) IsFather beingVertex
 >   return (mother, father)
 >
 > lift2 :: (a -> b) -> (a, a) -> (b, b)
@@ -256,7 +250,7 @@ particular about our types:
 
   hercules.out('father','mother').name
 
-> namesOfParents :: Being -> GraphQueries StupidGraph (Name, Name)
+> namesOfParents :: Being -> GraphQueries FunctionalGraph (Name, Name)
 > namesOfParents = fmap (lift2 beingName) . parentsOf
 
 Note that what this example calls type, we call status. In our world, a type
@@ -264,7 +258,7 @@ is not a value on the vertex.
 
   hercules.out('father','mother').type
 
-> statusOfParents :: Being -> GraphQueries StupidGraph (Status, Status)
+> statusOfParents :: Being -> GraphQueries FunctionalGraph (Status, Status)
 > statusOfParents = fmap (lift2 getStatus) . parentsOf
 
 Ok, we can compute this one purely, but for the sake of demonstration, we
@@ -272,57 +266,62 @@ express it in GraphPatterns as well.
 
   hercules.type
 
-> statusOfPerson :: Being -> GraphQueries StupidGraph Status
+> statusOfPerson :: Being -> GraphQueries FunctionalGraph Status
 > statusOfPerson = fmap (apply2 breed) . statusOfParents
 
 Now we move away from lineage and on to violence.
 
   hercules.out('battled')
 
-> monstersBattled :: Being -> GraphQueries StupidGraph Monster
-> monstersBattled = adjacentOut (Proxy :: Proxy Battled) HasBattled
+> monstersBattled :: Being -> GraphQueries FunctionalGraph Monster
+> monstersBattled being = do
+>   beingVertex <- vertex (Proxy :: Proxy Being) being
+>   v <$> adjacentOut (Proxy :: Proxy Battled) HasBattled beingVertex
 
 This one doesn't really translate to our system; why ask for the map when
 we know statically what data a Monster determines?
 
   hercules.out('battled').map
 
-> namesOfMonstersBattled :: Being -> GraphQueries StupidGraph Name
+> namesOfMonstersBattled :: Being -> GraphQueries FunctionalGraph Name
 > namesOfMonstersBattled = fmap monsterName . monstersBattled
 
 Aha, here's a good one
 
   hercules.outE('battled').has('time',T.gt,1).inV.name
 
-> battledRecently :: Time -> Being -> GraphQueries StupidGraph Monster
+> battledRecently :: Time -> Being -> GraphQueries FunctionalGraph Monster
 > battledRecently time being = do
->   battled :: Battled <- outgoing HasBattled being
+>   beingVertex :: V FunctionalGraph Being <- vertex (Proxy :: Proxy Being) being
+>   battledEdge :: E FunctionalGraph Battled <- outgoing HasBattled beingVertex
+>   let battled :: Battled = e battledEdge
 >   -- Observe the use of MonadPlus to cast out the undesirables.
 >   guard $ timeBattled battled > time
->   target battled
+>   v <$> target battledEdge
 >
-> nameOfBattledRecently :: Time -> Being -> GraphQueries StupidGraph Name
+> nameOfBattledRecently :: Time -> Being -> GraphQueries FunctionalGraph Name
 > nameOfBattledRecently time = fmap monsterName . battledRecently time
 
 Let's move on to the next section. This one is just like finding Hercules.
 
   pluto = g.V('name','pluto').next()
 
-> pluto :: GraphQueries StupidGraph Being
-> pluto = vertex (Proxy :: Proxy Being) (Name "Pluto")
+> pluto :: GraphQueries FunctionalGraph Being
+> pluto = v <$> vertex (Proxy :: Proxy Being) (Name "Pluto")
 
   pluto.out('lives').in('lives').name
 
-> roomates :: Being -> GraphQueries StupidGraph Being
+> roomates :: Being -> GraphQueries FunctionalGraph Being
 > roomates being = do
->   edge :: Lives <- outgoing LivesIn being
+>   beingVertex <- vertex (Proxy :: Proxy Being) being
+>   edge :: E FunctionalGraph Lives <- outgoing LivesIn beingVertex
 >   location <- target edge
->   adjacentIn (Proxy :: Proxy Lives) LivesIn location
+>   v <$> adjacentIn (Proxy :: Proxy Lives) LivesIn location
 
   pluto.out('lives').in('lives').except([pluto]).name
   pluto.as('x').out('lives').in('lives').except('x').name
 
-> roomatesProper :: Being -> GraphQueries StupidGraph Being
+> roomatesProper :: Being -> GraphQueries FunctionalGraph Being
 > roomatesProper being = do
 >   roomate <- roomates being
 >   guard $ (beingName roomate) /= (beingName being)
@@ -332,48 +331,53 @@ Let's move on to the next section. This one is just like finding Hercules.
 
   pluto.out('brother').out('lives').name
 
-> brothersPlace :: Being -> GraphQueries StupidGraph Location
+> brothersPlace :: Being -> GraphQueries FunctionalGraph Location
 > brothersPlace being = do
->   brother <- adjacentOut (Proxy :: Proxy IsBrother) IsBrother being
->   adjacentOut (Proxy :: Proxy Lives) LivesIn brother
+>   beingVertex <- vertex (Proxy :: Proxy Being) being
+>   brother <- adjacentOut (Proxy :: Proxy IsBrother) IsBrother beingVertex
+>   v <$> adjacentOut (Proxy :: Proxy Lives) LivesIn brother
 >
-> nameOfBrothersPlace :: Being -> GraphQueries StupidGraph Name
+> nameOfBrothersPlace :: Being -> GraphQueries FunctionalGraph Name
 > nameOfBrothersPlace = fmap locationName . brothersPlace
 
   pluto.out('brother').as('god').out('lives').as('place').select
 
-> brotherAndAbode :: Being -> GraphQueries StupidGraph (Being, Location)
+> brotherAndAbode :: Being -> GraphQueries FunctionalGraph (Being, Location)
 > brotherAndAbode being = do
->   god <- adjacentOut (Proxy :: Proxy IsBrother) IsBrother being
->   place <- adjacentOut (Proxy :: Proxy Lives) LivesIn god
+>   beingVertex <- vertex (Proxy :: Proxy Being) being
+>   godVertex <- undefined -- adjacentOut (Proxy :: Proxy IsBrother) IsBrother beingVertex
+>   placeVertex <- undefined -- adjacentOut (Proxy :: Proxy Lives) LivesIn godVertex
+>   god <- v godVertex
+>   place <- v placeVertex
 >   return (god, place)
 
 pluto.out('brother').as('god').out('lives').as('place').select{it.name}
 
-> namesOfBrotherAndAbode :: Being -> GraphQueries StupidGraph (Name, Name)
+> namesOfBrotherAndAbode :: Being -> GraphQueries FunctionalGraph (Name, Name)
 > namesOfBrotherAndAbode being = do
 >   (brother, location) <- brotherAndAbode being
 >   return (beingName brother, locationName location)
 
   pluto.outE('lives').reason
 
-> reasonForLivingThere :: Being -> GraphQueries StupidGraph Reason
+> reasonForLivingThere :: Being -> GraphQueries FunctionalGraph Reason
 > reasonForLivingThere being = do
->   edge :: Lives <- outgoing LivesIn being
+>   beingVertex <- vertex (Proxy :: Proxy Being) being
+>   edge <- e <$> outgoing LivesIn beingVertex
 >   return $ why edge
 
   g.E.has('reason',CONTAINS,'loves')
 
-> lovesLivingThere :: GraphQueries StupidGraph Lives
+> --lovesLivingThere :: GraphQueries FunctionalGraph Lives
 > lovesLivingThere = edge (Proxy :: Proxy Lives) (Reason "Loves")
 
   g.E.has('reason',CONTAINS,'loves').collect{
       [it.outV.name.next(),it.reason,it.inV.name.next()] 
   }
 
-> lovesLivingThere' :: GraphQueries StupidGraph (Name, Reason, Name)
+> lovesLivingThere' :: GraphQueries FunctionalGraph (Name, Reason, Name)
 > lovesLivingThere' = do
 >   lives <- lovesLivingThere
 >   being <- source lives
 >   location <- target lives
->   return (beingName being, why lives, locationName location)
+>   return (beingName . v $ being, why . e $ lives, locationName . v $ location)
