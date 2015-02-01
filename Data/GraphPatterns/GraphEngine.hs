@@ -1,7 +1,9 @@
 {-# LANGUAGE TypeFamilies #-}
 
 module Data.GraphPatterns.GraphEngine (
+
     GraphEngine(..)
+
   ) where
 
 import Control.Applicative (Applicative)
@@ -14,13 +16,15 @@ import Control.Applicative (Applicative)
 --     - A datatype representing the entire graph, instances of which provide
 --       a source of information.
 --
---     - A datatype representing an edge in the graph.
+--     - A datatype representing an edge (vertex) in the graph.
 --
---     - A datatype representing a vertex in the graph.
+--     - A datatype representing an edge (vertex) insertion into the
+--       graph, i.e. enough information to insert and then return an
+--       edge (vertex)
 --
---     - A datatype representing possibly partial vertex information.
---
---     - A datatype representing possibly partial edge information.
+--     - A datatype representing possibly partial edge (vertex)
+--       information, i.e. members of which identify 0 or more edges
+--       (vertices) in a graph.
 --
 --   We do not get static verification of graph traversals here; those
 --   properties are described at a higher level, in our GraphPatterns DSL,
@@ -35,9 +39,6 @@ class (Functor m, Applicative m, Monad m) => GraphEngine m where
   -- | Type of vertices. Each member of this type must identify at most one
   --   actual vertex in an EngineGraph.
   data EngineVertex m v :: *
-
-  -- | Type of edges. Each member of this type must identify at most one
-  --   actual edge in an EngineGraph.
   data EngineEdge m e :: *
 
   -- | Vertex and Edge instances must provide injections into these types so
@@ -50,9 +51,6 @@ class (Functor m, Applicative m, Monad m) => GraphEngine m where
   -- | Type of (possibly partial) vertex information. Each member of this type
   --   must characterize 0 or more vertices in an EngineGraph.
   data EngineVertexInformation m v :: *
-
-  -- | Type of (possibly partial) edge information. Each member of this type
-  --   must characterize 0 or more edges in an EngineGraph.
   data EngineEdgeInformation m e :: *
 
   -- | Get the vertex to which an edge goes in (head of edge is here).
@@ -71,28 +69,6 @@ class (Functor m, Applicative m, Monad m) => GraphEngine m where
 
   -- | Given a Vertex, produce a list of all Edges outgoing, i.e. with tail
   --   ends at the Vertex.
-  --getEdgesOut
-    -- What's at odds here in my mind: should the engine be responsible for
-    -- reporting anomalies? We could do it the other way: engine gives back
-    -- your edges and our DSL automatically does the anomaly check.
-    -- Yeah, same applies to getVertex/getEdge : give some information, return
-    -- a list, and have the DSL check whether its an anomaly!
-  --  :: (HandlesAnomaly t)
-  --  => EngineVertex m
-  --  -> m (Either Anomaly (t (EngineEdge m)))
-  --
-  -- Why do we need this when we have getEdge? Surely we could just give the
-  -- adjacency as part of the EngineEdgeInformation, no? We would need, in
-  -- order to do this generically, the function
-  --
-  --   f :: EngineEdgeInformation m -> (EngineVertex m, EngineVertex m)
-  --
-  -- but that's too much to ask. Not every piece of EngineEdgeInformation
-  -- determines in and out vertices.
-  --
-  -- Instead, we choose to keep EngineEdgeInformation divorced from topology.
-  -- An EngineEdgeInformation can make no statement about where that edge lies
-  -- in a graph.
   getEdgesOut :: EngineEdgeInformation m e -> EngineVertex m v -> m [EngineEdge m e]
 
   -- | Given a Vertex, produce a list of all Edges incoming, i.e. with tail
@@ -100,11 +76,9 @@ class (Functor m, Applicative m, Monad m) => GraphEngine m where
   getEdgesIn :: EngineEdgeInformation m e -> EngineVertex m v -> m [EngineEdge m e]
 
   insertVertex :: EngineVertexInsertion m v -> m (Maybe (EngineVertex m v))
-  -- ^ Must give True and only if the vertex was successfully inserted.
 
   insertEdge
     :: EngineEdgeInsertion m e
     -> EngineVertex m u
     -> EngineVertex m v
     -> m (Maybe (EngineEdge m e))
-  -- ^ Regarding the Bool: same contract as for insertVertex
