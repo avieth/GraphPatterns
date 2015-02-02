@@ -52,6 +52,8 @@ module Data.GraphPatterns.Language (
   ) where
 
 import Prelude hiding (concat)
+
+import Data.GraphPatterns.MList
 import Data.GraphPatterns.GraphEngine
 import Data.GraphPatterns.Anomaly
 import Data.GraphPatterns.Vertex
@@ -64,74 +66,6 @@ import Control.Monad
 import Data.Traversable (traverse, Traversable)
 import Data.Foldable
 import Data.Proxy
-
--- | We begin with a special monad-list type, as seen in the ListT done right
---   alternative http://www.haskell.org/haskellwiki/ListT_done_right_alternative
-newtype MList m a = MList {
-    runMList :: m (Maybe (a, MList m a))
-  }
-
-instance Functor m => Functor (MList m) where
-  fmap f = MList . (fmap . fmap) f' . runMList
-    where f' (x, next) = (f x, fmap f next)
-
-instance (Applicative m, Monad m) => Applicative (MList m) where
-  pure x = MList $ pure (Just (x, MList $ pure Nothing))
-  f <*> x = ap f x
-
-instance (Applicative m, Monad m) => Monad (MList m) where
-  return = pure
-  x >>= k = MList $ do
-    x' <- runMList x
-    case x' of
-      Nothing -> return Nothing
-      Just (x'', next) -> runMList $ (k x'') `mlistAppend` (next >>= k)
-
-mlistAppend :: Monad m => MList m a -> MList m a -> MList m a
-mlistAppend first second = MList $ do
-  head <- runMList first
-  case head of
-    Nothing -> runMList second
-    Just (h, rest) -> return $ Just (h, mlistAppend rest second)
-
-mlistEmpty :: Monad m => MList m a
-mlistEmpty = MList $ return Nothing
-
-mlistCons :: Monad m => m a -> MList m a -> MList m a
-mlistCons x rest = MList $ do
-  x' <- x
-  return $ Just (x', rest)
-
-convertToMList :: Monad m => m [a] -> MList m a
-convertToMList val = MList $ do
-  list <- val
-  case list of
-    [] -> return Nothing
-    (x : xs) -> return $ Just (x, convertToMList (return xs))
-
-toMList :: Monad m => [a] -> MList m a
---toMList [] = MList $ return Nothing
---toMList (x:xs) = MList $ return (Just (x, toMList xs))
-toMList [] = mlistEmpty
-toMList (x:xs) = mlistCons (return x) (toMList xs)
-
-fromMList :: (Applicative m, Monad m) => MList m a -> m [a]
-fromMList x = do
-  head <- runMList x
-  case head of
-    Nothing -> return []
-    Just (x', rest) -> (:) <$> return x' <*> fromMList rest
-
-mapMList :: Monad m => (a -> m b) -> [a] -> MList m b
-mapMList f [] = mlistEmpty
-mapMList f (x:xs) = mlistCons (f x) (mapMList f xs)
-
-mlistConcat :: Monad m => MList m (MList m a) -> MList m a
-mlistConcat x = MList $ do
-  head <- runMList x
-  case head of
-    Nothing -> return Nothing
-    Just (anMList, rest) -> runMList $ mlistAppend anMList (mlistConcat rest)
 
 -- | Lift <*> in through another applicative.
 (<*^*>) :: (Applicative m, Applicative n) => m (n (a -> b)) -> m (n a) -> m (n b)
@@ -169,20 +103,6 @@ instance (Applicative m, Monad m) => Monad (QueryResultT m) where
 mbind :: (Applicative m, Monad m) => Either Anomaly (MList m (Either Anomaly a)) -> MList m (Either Anomaly a)
 mbind (Left l) = return $ Left l
 mbind (Right list) = list
-
-mjoin :: Monad m
-      => MList m (Either Anomaly (MList m (Either Anomaly a)))
-      -> MList m (Either Anomaly a)
-mjoin x = MList $ do
-  x' <- runMList x
-  case x' of
-    Nothing -> return Nothing
-    Just (y, rest) -> case y of
-      -- ^ y :: Either Anomaly (MList m (Either Anomaly a))
-      --   rest :: MList m (Either Anomaly (MList m (Either Anomaly a)))
-      Left l -> runMList $ (return (Left l)) `mlistCons` (mjoin rest)
-      Right list -> runMList $ list `mlistAppend` (mjoin rest)
-
 
 resultOk :: (Applicative m, Monad m) => [a] -> QueryResultT m a
 resultOk = QueryResultT . toMList . fmap Right
