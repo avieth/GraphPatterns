@@ -41,9 +41,9 @@ module Data.GraphPatterns.Language (
   , putVertex
   , putEdge
 
-  -- TODO
   , GraphPatterns
   , runGraphPatterns
+  , runGraphPatterns'
   , query 
   -- ^ injects a GraphQueries into GraphPatterns
   , mutation
@@ -452,3 +452,6 @@ mutation m = GraphPatterns . GraphQueries . QueryResultT $ x
 
 runGraphPatterns :: GraphPatterns m a -> GraphPatternsResult m a
 runGraphPatterns = runGraphQueries . unGraphPatterns
+
+runGraphPatterns' :: (Applicative m, Monad m) => GraphPatterns m a -> m [Either Anomaly a]
+runGraphPatterns' = fromMList . runQueryResult . runGraphPatterns
