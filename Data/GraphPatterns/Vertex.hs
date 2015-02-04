@@ -41,7 +41,7 @@ class Vertex m v => DeterminesVertex m determiner v where
 --   Wherever a vertex u is expected, a vertex v can be given; wherever a
 --   vertex v is expected, a u cannot necessarily be given.
 --   TBD deceiving name? Maybe SubstituteVertex?
-class (GraphEngine m, Vertex m v, Vertex m u) => SubVertex m v u where
+class (GraphEngine m, Vertex m u) => SubVertex m v u where
   subVertexInjection :: Proxy m -> v -> u
   subVertexRetraction :: Proxy m -> u -> Maybe v
 
