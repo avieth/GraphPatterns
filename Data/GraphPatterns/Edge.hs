@@ -62,12 +62,10 @@ class (GraphEngine m, Edge m e) => DeterminesEdge m d e where
 -- With an instance of this class we assert that a type d indicates some local
 -- edge properties at vertices of type v, for one type of edge e.
 --
---   - The direction of that edge. This means that at a given vertex, a given
---     edge type can only go in one direction, out or in. But that's
---     unacceptable! TODO
---
--- Ok, step back. What we want to facilitate here is the use of a type T to
--- indicate local edge type constraints.
+--   - The direction of that edge.
+--   - A projection onto EngineEdgeInformation for the given GraphEngine, so
+--     that edges at a Vertex of the given type can be filtered to what is
+--     requested.
 class 
   ( GraphEngine m
   , Edge m e
@@ -88,15 +86,12 @@ class
     --   v ~ v
   ) => DeterminesLocalEdge m v e determiner where
 
-  -- Must indicate direction. Must be one of Out, In
+  -- Must indicate direction. Must be one of Out, In, Both.
   -- In means "goes into a vertex of type v" and out means "goes out of
   -- a vertex of type v" so in the former, the edge would have its tip at a
   -- vertex of this type.
   type EdgeDirection m v e determiner :: *
-  -- Must indicate cardinality. One of Multi, Single
-  -- NO we don't put this here, it's recoverable from the Edge instance and
-  -- the direction!
-  --type EdgeCardinality m v e determiner :: *
+
   toEngineEdgeInformationLocal
     :: Proxy m
     -- I thought using a Proxy would be better, but I wasn't able to use that
