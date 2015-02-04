@@ -399,14 +399,24 @@ instance (Applicative m, Monad m) => Monad (GraphMutations m) where
       Left l -> return $ Left l
       Right x'' -> runGraphMutations $ k x''
 
+-- | Given any Vertex, we can mutate the graph by adding a Vertex of any
+--   type such that the former Vertex is a SubVertex of the latter.
+--   You give the SubVertex, you get back and EngineVertex of the super
+--   vertex, resting assured that queries on the super vertex will work
+--   as expected.
 putVertex
-  :: forall m v .
-     ( Vertex m v
+  :: forall m v v' .
+     ( SubVertex m v v'
+     , Vertex m v
      )
   => v
-  -> GraphMutations m (EngineVertex m v)
-putVertex v = GraphMutations $ do
-  let engineVertex :: EngineVertexInsertion m v = toEngineVertexInsertion v
+  -> Proxy v'
+  -- ^ To indicate which kind of Vertex you'd like to insert as, in case GHC
+  -- can't figure it out.
+  -> GraphMutations m (EngineVertex m v')
+putVertex v _ = GraphMutations $ do
+  let engineVertex :: EngineVertexInsertion m v' =
+        toEngineVertexInsertion (subVertexInjection (Proxy :: Proxy m) v)
   b <- insertVertex engineVertex
   case b of
     Nothing -> return $ Left VertexInsertionAnomaly
