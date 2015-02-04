@@ -413,12 +413,14 @@ putVertex v = GraphMutations $ do
     Just x -> return $ Right x
 
 putEdge
-  :: forall m e v u .
+  :: forall m e v u v' u' .
      ( Edge m e
      , Vertex m u
      , Vertex m v
-     , EdgeSource m e ~ u
-     , EdgeTarget m e ~ v
+     , SubVertex m u u'
+     , SubVertex m v v'
+     , EdgeSource m e ~ u'
+     , EdgeTarget m e ~ v'
      )
   => e
   -> EngineVertex m u
