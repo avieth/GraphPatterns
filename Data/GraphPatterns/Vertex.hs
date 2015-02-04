@@ -1,9 +1,11 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
+{-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE TypeFamilies #-}
 
 module Data.GraphPatterns.Vertex (
     Vertex(..)
   , DeterminesVertex(..)
+  , SubVertex(..)
   ) where
 
 import Data.Proxy
@@ -33,3 +35,16 @@ class Vertex m v => DeterminesVertex m determiner v where
     -> Proxy v
     -> determiner
     -> EngineVertexInformation m v
+
+-- | An instance of this class proves that any vertex v can be converted to
+--   a vertex u.
+--   Wherever a vertex u is expected, a vertex v can be given; wherever a
+--   vertex v is expected, a u cannot necessarily be given.
+--   TBD deceiving name? Maybe SubstituteVertex?
+class (GraphEngine m, Vertex m v, Vertex m u) => SubVertex m v u where
+  subVertexInjection :: Proxy m -> v -> u
+  subVertexRetraction :: Proxy m -> u -> Maybe v
+
+instance (GraphEngine m, Vertex m v) => SubVertex m v v where
+  subVertexInjection _ = id
+  subVertexRetraction _ = Just
