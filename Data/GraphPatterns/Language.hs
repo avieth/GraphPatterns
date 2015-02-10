@@ -60,6 +60,8 @@ import Data.GraphPatterns.Vertex
 import Data.GraphPatterns.Edge
 import Data.GraphPatterns.Types
 
+import Data.TypeRelation
+
 import Control.Applicative
 import Control.Monad
 
@@ -153,45 +155,53 @@ instance (Functor m, Applicative m, Monad m) => MonadPlus (GraphQueries m) where
 -- | This type carries an EngineVertex and a Vertex. It shall be produced
 --   by our DSL primitives. It is here so that we don't have to continually
 --   convert to and from EngineVertex.
-data V m v = forall ev . (ev ~ EngineVertex m v) => V ev v
+data V ev v = V ev v
 
 -- | Like V, this type is here to prevent superfluous conversions from
 --   engine types.
-data E m e = forall ee . (ee ~ EngineEdge m e) => E ee e
+data E ee e = E ee e
 
--- Projection from V onto its EngineVertex.
+-- | Projection from V onto its EngineVertex.
+--   Requires a proxy in order to determine which EngineVertex instance to use.
 engineV
   :: forall m v ev .
      ( ev ~ EngineVertex m v
      )
-  => V m v
+  => Proxy m
+  -> V ev v
   -> ev
-engineV (V ev _) = ev
+engineV _ (V ev _) = ev
 
--- Projection from E onto its EngineEdge.
+-- | Projection from E onto its EngineEdge.
+--   Requires a proxy in order to determine which EngineEdge instance to use.
 engineE
   :: forall m e ee .
      ( ee ~ EngineEdge m e
      )
-  => E m e
+  => Proxy m
+  -> E ee e
   -> ee
-engineE (E ee _) = ee
+engineE _ (E ee _) = ee
 
--- | Projection from V onto its Vertex.
+-- | Projection from V onto something of which the Vertex is a smaller type.
 v
-  :: forall m v .
-     ()
-  => V m v
-  -> v
-v (V _ x) = x
+  :: forall m v w .
+     ( Smaller v w
+     )
+  => Proxy w
+  -> V m v
+  -> w
+v _ (V _ x) = inject x
 
--- | Projection from E onto its Edge.
+-- | Projection from E onto something of which the Edge is a smaller type.
 e
-  :: forall m e .
-     ()
-  => E m e
-  -> e
-e (E _ x) = x
+  :: forall m e f .
+     ( Smaller e f
+     )
+  => Proxy f
+  -> E m e
+  -> f
+e _ (E _ x) = inject x
 
 -- | Injection into V; this can only be done within the GraphQueries
 --   monad, because an EngineVertex must also be defined!
@@ -205,7 +215,7 @@ v'
      , Vertex m v
      )
   => ev
-  -> GraphQueries m (V m v)
+  -> GraphQueries m (V ev v)
 v' engineVertex = GraphQueries $ do
   let maybeVertex :: Maybe v = fromEngineVertex engineVertex
   case maybeVertex of
@@ -220,7 +230,7 @@ e'
      , Edge m e
      )
   => ee
-  -> GraphQueries m (E m e)
+  -> GraphQueries m (E ee e)
 e' engineEdge = GraphQueries $ do
   let maybeEdge :: Maybe e = fromEngineEdge engineEdge
   case maybeEdge of
@@ -229,14 +239,15 @@ e' engineEdge = GraphQueries $ do
 
 -- This is not the most general type.
 vertex
-  :: forall m d v .
+  :: forall m d v ev .
      ( DeterminesVertex m d v
+     , ev ~ EngineVertex m v
      )
   => Proxy v
   -> d
-  -> GraphQueries m (V m v)
-vertex vertexProxy determiner = GraphQueries $ do
-  let vertexInfo = toEngineVertexInformation (Proxy :: Proxy m) vertexProxy determiner
+  -> GraphQueries m (V ev v)
+vertex proxy determiner = GraphQueries $ do
+  let vertexInfo = toEngineVertexInformation (Proxy :: Proxy m) proxy determiner
   engineVertex <- liftListQ $ getVertices vertexInfo
   runGraphQueries $ v' engineVertex
   -- Must check for a uniqueness anomaly here!!!
@@ -248,106 +259,132 @@ vertex vertexProxy determiner = GraphQueries $ do
   --   runGraphQueries $ v engineVertex
 
 edge
-  :: forall m d e .
+  :: forall m d e ee .
      ( DeterminesEdge m d e
+     , ee ~ EngineEdge m e
      )
   => Proxy e
   -> d
-  -> GraphQueries m (E m e)
-edge edgeProxy determiner = GraphQueries $ do
-  let edgeInfo = toEngineEdgeInformation (Proxy :: Proxy m) edgeProxy determiner
+  -> GraphQueries m (E ee e)
+edge proxy determiner = GraphQueries $ do
+  let edgeInfo = toEngineEdgeInformation (Proxy :: Proxy m) proxy determiner
   engineEdge <- liftListQ $ getEdges edgeInfo
   runGraphQueries $ e' engineEdge
 
 incoming
-  :: forall m e v d .
+  :: forall m e v d ee ev .
      ( Edge m e
      , Vertex m v
      , DeterminesLocalEdge m v e d
      , FixDirection (EdgeDirection m v e d) In ~ In
+     , ev ~ EngineVertex m v
+     , ee ~ EngineEdge m e
      )
   => d
-  -> V m v
-  -> GraphQueries m (E m e)
+  -> V ev v
+  -> GraphQueries m (E ee e)
 incoming determiner vertex = GraphQueries $ do
   let edgeInfo = toEngineEdgeInformationLocal Proxy (Proxy :: Proxy v) (Proxy :: Proxy e) determiner
-  engineEdges <- liftQ $ getEdgesIn edgeInfo (engineV vertex)
+  engineEdges <- liftQ $ getEdgesIn edgeInfo (engineV (Proxy :: Proxy m) vertex)
   -- TODO FIXME check for edge cardinality anomaly
   engineEdge <- liftListQ $ return engineEdges
   runGraphQueries $ e' engineEdge
 
 outgoing
-  :: forall m e v d .
+  :: forall m e v d ee ev .
      ( Edge m e
      , Vertex m v
      , DeterminesLocalEdge m v e d
      , FixDirection (EdgeDirection m v e d) Out ~ Out
+     , ev ~ EngineVertex m v
+     , ee ~ EngineEdge m e
      )
   => d
-  -> V m v
-  -> GraphQueries m (E m e)
+  -> V ev v
+  -> GraphQueries m (E ee e)
 outgoing determiner vertex = GraphQueries $ do
   let edgeInfo = toEngineEdgeInformationLocal Proxy (Proxy :: Proxy v) (Proxy :: Proxy e) determiner
-  engineEdges <- liftQ $ getEdgesIn edgeInfo (engineV vertex)
+  engineEdges <- liftQ $ getEdgesIn edgeInfo (engineV (Proxy :: Proxy m) vertex)
   -- TODO FIXME check for edge cardinaltiy anomaly
   engineEdge <- liftListQ $ return engineEdges
   runGraphQueries $ e' engineEdge
 
-
+-- | Ask for the source of an edge, i.e. the Vertex out of which is extends.
 source
-  :: forall m e .
+  :: forall m e v ee ev .
      ( Edge m e
+     , Vertex m v
+     , v ~ EdgeSource m e
+     , ee ~ EngineEdge m e
+     , ev ~ EngineVertex m v
      )
-  => E m e
-  -> GraphQueries m (V m (EdgeSource m e))
-source edge = GraphQueries $ do
-  sourceVertex <- liftQ $ getSourceVertex (engineE edge)
+  => Proxy v
+  -> E ee e
+  -> GraphQueries m (V ev v)
+source proxy edge = GraphQueries $ do
+  sourceVertex <- liftQ $ getSourceVertex (engineE (Proxy :: Proxy m) edge)
   case sourceVertex of
     Nothing -> resultNotOk undefined -- TODO proper anomaly.
     Just x -> runGraphQueries $ v' x
 
 target
-  :: forall m e .
+  :: forall m e v ee ev .
      ( Edge m e
+     , Vertex m v
+     , v ~ EdgeTarget m e
+     , ee ~ EngineEdge m e
+     , ev ~ EngineVertex m v
      )
-  => E m e
-  -> GraphQueries m (V m (EdgeTarget m e))
-target edge = GraphQueries $ do
-  targetVertex <- liftQ $ getTargetVertex (engineE edge)
+  => Proxy v
+  -> E ee e
+  -> GraphQueries m (V ev v)
+target proxy edge = GraphQueries $ do
+  targetVertex <- liftQ $ getTargetVertex (engineE (Proxy :: Proxy m) edge)
   case targetVertex of
     Nothing -> resultNotOk undefined -- TODO proper anomaly
     Just x -> runGraphQueries $ v' x
 
 adjacentOut
-  :: forall m e d .
-     ( DeterminesLocalEdge m (EdgeSource m e) e d
-     , FixDirection (EdgeDirection m (EdgeSource m e) e d) Out ~ Out
+  :: forall m d e v w ev ew ee .
+     ( DeterminesLocalEdge m v e d
+     , FixDirection (EdgeDirection m v e d) Out ~ Out
+     , Vertex m v
+     , Vertex m w
+     , v ~ EdgeSource m e
+     , w ~ EdgeTarget m e
+     , ev ~ EngineVertex m v
+     , ew ~ EngineVertex m w
+     , ee ~ EngineEdge m e
      )
   => Proxy e
-  -- ^ Somehow, we need the proxy to avoid ambiguity, but we never actually
-  -- use the relevant value or its type... do we?
-  -- Can't wrap my head around this witchcraft.
   -> d
-  -> V m (EdgeSource m e)
-  -> GraphQueries m (V m (EdgeTarget m e))
+  -> V ev v
+  -> GraphQueries m (V ew w)
 adjacentOut proxy d vertex = do
-  outg :: E m e <- outgoing d vertex
+  outg :: E ee e <- outgoing d vertex
   -- ^ This type annotation is essential; without it we get ambiguity!
   --target $ E (Left outg)
-  target outg
+  target (Proxy :: Proxy w) outg
 
 adjacentIn
-  :: forall m e d .
-     ( DeterminesLocalEdge m (EdgeTarget m e) e d
-     , FixDirection (EdgeDirection m (EdgeTarget m e) e d) In ~ In
+  :: forall m d e v w ev ew ee .
+     ( DeterminesLocalEdge m v e d
+     , FixDirection (EdgeDirection m v e d) In ~ In
+     , Vertex m v
+     , Vertex m w
+     , v ~ EdgeTarget m e
+     , w ~ EdgeSource m e
+     , ev ~ EngineVertex m v
+     , ew ~ EngineVertex m w
+     , ee ~ EngineEdge m e
      )
   => Proxy e
   -> d
-  -> V m (EdgeTarget m e)
-  -> GraphQueries m (V m (EdgeSource m e))
+  -> V ev v
+  -> GraphQueries m (V ew w)
 adjacentIn proxy d vertex = do
-  inc :: E m e <- incoming d vertex
-  source inc
+  inc :: E ee e <- incoming d vertex
+  source (Proxy :: Proxy w) inc
 
 -- | Now we turn our attention to the GraphMutations monad for mutating a graph.
 --   This monad is also a GraphQueries monad, but with an added bonus: when
@@ -405,46 +442,51 @@ instance (Applicative m, Monad m) => Monad (GraphMutations m) where
 --   vertex, resting assured that queries on the super vertex will work
 --   as expected.
 putVertex
-  :: forall m v v' .
-     ( SubVertex m v v'
-     , Vertex m v
+  :: forall m v w ev .
+     ( Vertex m v
+     , Smaller w v
+     , ev ~ EngineVertex m v
      )
-  => v
-  -> Proxy v'
-  -- ^ To indicate which kind of Vertex you'd like to insert as, in case GHC
-  -- can't figure it out.
-  -> GraphMutations m (EngineVertex m v')
-putVertex v _ = GraphMutations $ do
-  let engineVertex :: EngineVertexInsertion m v' =
-        toEngineVertexInsertion (subVertexInjection (Proxy :: Proxy m) v)
+  => Proxy v
+  -> w
+  -> GraphMutations m (V ev v)
+putVertex proxy w = GraphMutations $ do
+  let v = inject w
+      engineVertex :: EngineVertexInsertion m v = toEngineVertexInsertion v
   b <- insertVertex engineVertex
   case b of
     Nothing -> return $ Left VertexInsertionAnomaly
-    Just x -> return $ Right x
+    Just x -> return $ Right (V x v)
 
 putEdge
-  :: forall m e v u v' u' .
+  :: forall m e f v u ev eu ee .
      ( Edge m e
      , Vertex m u
      , Vertex m v
-     , SubVertex m u u'
-     , SubVertex m v v'
-     , EdgeSource m e ~ u'
-     , EdgeTarget m e ~ v'
+     , eu ~ EngineVertex m u
+     , ev ~ EngineVertex m v
+     , u ~ EdgeSource m e
+     , v ~ EdgeTarget m e
+     , ee ~ EngineEdge m e
+     , Smaller f e
      )
-  => e
-  -> EngineVertex m u
-  -> EngineVertex m v
-  -> GraphMutations m (EngineEdge m e)
-putEdge e u v = GraphMutations $ do
+  => Proxy e
+  -> f
+  -> V eu u
+  -> V ev v
+  -> GraphMutations m (E ee e)
+putEdge proxy f u v = GraphMutations $ do
   -- TODO check edge cardinality constraints and do not insert if it's violated.
   -- That will require doing a query before a mutation.
   -- TBD Is it possible to offload this to the GraphEngine if it supports it?
-  let edgeInsertion :: EngineEdgeInsertion m e = toEngineEdgeInsertion e
-  success <- insertEdge edgeInsertion u v
+  let e = inject f
+      edgeInsertion :: EngineEdgeInsertion m e = toEngineEdgeInsertion e
+      engineSource = engineV (Proxy :: Proxy m) u
+      engineTarget = engineV (Proxy :: Proxy m) v
+  success <- insertEdge edgeInsertion engineSource engineTarget
   case success of
     Nothing -> return $ Left EdgeInsertionAnomaly
-    Just x -> return $ Right x
+    Just x -> return $ Right (E x e)
 
 -- | The all-powerful GraphPatterns monad is just GraphQueries with injectors
 --   for GraphQueries and GraphMutations.
