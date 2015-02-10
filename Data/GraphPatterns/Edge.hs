@@ -24,11 +24,7 @@ import Data.GraphPatterns.Types
 
 -- With an instance of this class we assert simply that a given type e embeds
 -- into EngineEdge m for some GraphEngine m.
-class
-  ( GraphEngine m
-  , Vertex m (EdgeTarget m e)
-  , Vertex m (EdgeSource m e)
-  ) => Edge m e where
+class (GraphEngine m) => Edge m e where
 
   -- NB we really cannot use data families here; we _must_ have noninjectivity,
   -- because different edges can land on the same vertex types.
