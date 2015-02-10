@@ -29,6 +29,9 @@ class (GraphEngine m) => Edge m e where
   -- NB we really cannot use data families here; we _must_ have noninjectivity,
   -- because different edges can land on the same vertex types.
   -- This complicates type inference.
+  -- Also note that the images of these type functions need NOT be Vertex
+  -- instances! However, to be useful, they each must Smaller than some Vertex
+  -- instance.
   type EdgeSource m e :: *
   type EdgeTarget m e :: *
 
