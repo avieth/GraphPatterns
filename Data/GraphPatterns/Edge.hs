@@ -58,17 +58,10 @@ class
   ( GraphEngine m
   , Edge m e
   , EdgeRelated e s t
-  , t ~ IfOut (EdgeDirection m e s t determiner) t s
-  , s ~ IfIn (EdgeDirection m e s t determiner) s t
-  , t ~ IfBoth (EdgeDirection m e s t determiner) s t
-  , s ~ IfBoth (EdgeDirection m e s t determiner) t s
     -- ^ The above two conjuncts fix EdgeSource m e ~ EdgeTarget m e just in
     --   case the direction is Both (if it's not both, they degenerate to
     --   v ~ v
   ) => DeterminesLocalEdge m e s t determiner where
-
-  type EdgeDirection m e s t determiner :: *
-  -- ^ Must indicate direction. Must be one of Out, In, Both.
 
   toEngineEdgeInformationLocal
     :: Proxy s
