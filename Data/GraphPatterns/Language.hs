@@ -280,7 +280,6 @@ incoming
      , Vertex m t
      , Vertex m s
      , DeterminesLocalEdge m e s t d
-     , FixDirection (EdgeDirection m e s t d) In ~ In
      , et ~ EngineVertex m t
      , ee ~ EngineEdge m e
      )
@@ -307,7 +306,6 @@ outgoing
      , Vertex m s
      , Vertex m t
      , DeterminesLocalEdge m e s t d
-     , FixDirection (EdgeDirection m e s t d) Out ~ Out
      , es ~ EngineVertex m s
      , ee ~ EngineEdge m e
      )
@@ -331,11 +329,12 @@ source
      , ee ~ EngineEdge m e
      , es ~ EngineVertex m s
      )
-  => Proxy t
+  => Proxy s
+  -> Proxy t
   -- ^ We use a proxy to disambiguate the EdgeRelated instance.
   -> E ee e
   -> GraphQueries m (V es s)
-source _ edge = GraphQueries $ do
+source _ _ edge = GraphQueries $ do
   sourceVertex <- liftQ $ getSourceVertex (engineE (Proxy :: Proxy m) edge)
   case sourceVertex of
     Nothing -> resultNotOk undefined -- TODO proper anomaly.
@@ -350,9 +349,10 @@ target
      , et ~ EngineVertex m t
      )
   => Proxy s
+  -> Proxy t
   -> E ee e
   -> GraphQueries m (V et t)
-target _ edge = GraphQueries $ do
+target _ _ edge = GraphQueries $ do
   targetVertex <- liftQ $ getTargetVertex (engineE (Proxy :: Proxy m) edge)
   case targetVertex of
     Nothing -> resultNotOk undefined -- TODO proper anomaly
@@ -362,8 +362,6 @@ target _ edge = GraphQueries $ do
 adjacentOut
   :: forall m d e s t es et ee .
      ( DeterminesLocalEdge m e s t d
-     , EdgeRelated e s t
-     , FixDirection (EdgeDirection m e s t d) Out ~ Out
      , Vertex m s
      , Vertex m t
      , es ~ EngineVertex m s
@@ -379,14 +377,12 @@ adjacentOut proxyE proxyT d vertex = do
   outg :: E ee e <- outgoing proxyT d vertex
   -- ^ This type annotation is essential; without it we get ambiguity!
   --target $ E (Left outg)
-  target (Proxy :: Proxy s) outg
+  target (Proxy :: Proxy s) proxyT outg
 
 -- | Get the Vertex across an incoming edge, subject to an edge determiner.
 adjacentIn
   :: forall m d e s t es et ee .
      ( DeterminesLocalEdge m e s t d
-     , EdgeRelated e s t
-     , FixDirection (EdgeDirection m e s t d) In ~ In
      , Vertex m s
      , Vertex m t
      , es ~ EngineVertex m s
@@ -400,7 +396,7 @@ adjacentIn
   -> GraphQueries m (V es s)
 adjacentIn proxyE proxyS d vertex = do
   inc :: E ee e <- incoming proxyS d vertex
-  source (Proxy :: Proxy t) inc
+  source proxyS (Proxy :: Proxy t) inc
 
 -- | Now we turn our attention to the GraphMutations monad for mutating a graph.
 --   This monad is also a GraphQueries monad, but with an added bonus: when
