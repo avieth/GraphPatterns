@@ -24,8 +24,6 @@ module Data.GraphPatterns.Language (
   , vertex
   , edge
 
-  {-
-
   , incoming
   , outgoing
   , source
@@ -50,8 +48,6 @@ module Data.GraphPatterns.Language (
   -- ^ injects a GraphQueries into GraphPatterns
   , mutation
   -- ^ injects a GraphMutations into GraphPatterns
-
-  -}
 
   ) where
 
@@ -462,50 +458,44 @@ instance (Applicative m, Monad m) => Monad (GraphMutations m) where
 --   vertex, resting assured that queries on the super vertex will work
 --   as expected.
 putVertex
-  :: forall m v w ev .
+  :: forall m v ev .
      ( Vertex m v
-     , Smaller w v
      , ev ~ EngineVertex m v
      )
-  => Proxy v
-  -> w
+  => v
   -> GraphMutations m (V ev v)
-putVertex proxy w = GraphMutations $ do
-  let v = inject w
-      engineVertex :: EngineVertexInsertion m v = toEngineVertexInsertion v
+putVertex v = GraphMutations $ do
+  let engineVertex :: EngineVertexInsertion m v = toEngineVertexInsertion v
   b <- insertVertex engineVertex
   case b of
     Nothing -> return $ Left VertexInsertionAnomaly
-    Just x -> return $ Right (V x v)
+    Just ev -> return $ Right (V ev v)
 
 putEdge
-  :: forall m e f s t es et ee .
+  :: forall m e s t es et ee .
      ( Edge m e
      , Vertex m s
      , Vertex m t
      , es ~ EngineVertex m s
      , et ~ EngineVertex m t
      , ee ~ EngineEdge m e
-     , Smaller f e
      , EdgeRelated e s t
      )
-  => Proxy e
-  -> f
+  => e
   -> V es s
   -> V et t
   -> GraphMutations m (E ee e)
-putEdge proxy f u v = GraphMutations $ do
+putEdge e u v = GraphMutations $ do
   -- TODO check edge cardinality constraints and do not insert if it's violated.
   -- That will require doing a query before a mutation.
   -- TBD Is it possible to offload this to the GraphEngine if it supports it?
-  let e = inject f
-      edgeInsertion :: EngineEdgeInsertion m e = toEngineEdgeInsertion e
+  let edgeInsertion :: EngineEdgeInsertion m e = toEngineEdgeInsertion e
       engineSource = engineV (Proxy :: Proxy m) u
       engineTarget = engineV (Proxy :: Proxy m) v
   success <- insertEdge edgeInsertion engineSource engineTarget
   case success of
     Nothing -> return $ Left EdgeInsertionAnomaly
-    Just x -> return $ Right (E x e)
+    Just ee -> return $ Right (E ee e)
 
 -- | The all-powerful GraphPatterns monad is just GraphQueries with injectors
 --   for GraphQueries and GraphMutations.
