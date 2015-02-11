@@ -52,8 +52,9 @@ type MapValue = String
 --   predicate if we treat a map as a set of {(key, value)}
 --   Note that this is not just the Ord instance of M.Map; that one gives
 --   a total order but this one is partial.
---   TODO (low priority) bring in Data.Poset and describe the ordering
---   rather than just identifying less thans through a Bool.
+--   TODO (low priority) bring in Algebra.PartialOrd from the lattices package
+--   and describe the ordering rather than just identifying less thans through
+--   a Bool.
 matchProperties :: M.Map MapKey MapValue -> M.Map MapKey MapValue -> Bool
 matchProperties k0 k1 = M.foldrWithKey combine True k0
   where combine k v b = b && maybe False ((==) v) (M.lookup k k1)

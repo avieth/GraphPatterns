@@ -26,11 +26,9 @@ class GraphEngine m => Vertex m v where
 
 -- | Can't do a default reflexive instance because we don't know if a given
 --   Vertex is unique, nor do we know how to dump it to EngineVertexInformation.
-class Vertex m v => DeterminesVertex m determiner v where
+class Vertex m v => DeterminesVertex m v determiner where
   -- One of Unique or NotUnique
-  type VertexUniqueness m determiner v :: *
+  type VertexUniqueness m v determiner :: *
   toEngineVertexInformation
-    :: Proxy m
-    -> Proxy v
-    -> determiner
+    :: determiner
     -> EngineVertexInformation m v
