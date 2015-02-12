@@ -164,10 +164,10 @@ data E ee e = E ee e
 -- | Projection from V onto its EngineVertex.
 --   Requires a proxy in order to determine which EngineVertex instance to use.
 engineV
-  :: forall m v ev .
+  :: forall m v ev u .
      ( ev ~ EngineVertex m v
      )
-  => Proxy m
+  => u m
   -> V ev v
   -> ev
 engineV _ (V ev _) = ev
@@ -175,30 +175,30 @@ engineV _ (V ev _) = ev
 -- | Projection from E onto its EngineEdge.
 --   Requires a proxy in order to determine which EngineEdge instance to use.
 engineE
-  :: forall m e ee .
+  :: forall m e ee u .
      ( ee ~ EngineEdge m e
      )
-  => Proxy m
+  => u m
   -> E ee e
   -> ee
 engineE _ (E ee _) = ee
 
 -- | Projection from V onto something of which the Vertex is a smaller type.
 v
-  :: forall m v w .
+  :: forall m v w u .
      ( Smaller v w
      )
-  => Proxy w
+  => u w
   -> V m v
   -> w
 v _ (V _ x) = inject x
 
 -- | Projection from E onto something of which the Edge is a smaller type.
 e
-  :: forall m e f .
+  :: forall m e f u .
      ( Smaller e f
      )
-  => Proxy f
+  => u f
   -> E m e
   -> f
 e _ (E _ x) = inject x
@@ -239,11 +239,11 @@ e' engineEdge = GraphQueries $ do
 
 -- | Ask for a Vertex, subject to a given determiner.
 vertex
-  :: forall m d v ev .
+  :: forall m d v ev u .
      ( DeterminesVertex m v d
      , ev ~ EngineVertex m v
      )
-  => Proxy v
+  => u v
   -> d
   -> GraphQueries m (V ev v)
 vertex _ determiner = GraphQueries $ do
@@ -260,11 +260,11 @@ vertex _ determiner = GraphQueries $ do
 
 -- | Ask for an Edge, subject to a given determiner.
 edge
-  :: forall m d e ee .
+  :: forall m d e ee u .
      ( DeterminesEdge m e d
      , ee ~ EngineEdge m e
      )
-  => Proxy e
+  => u e
   -> d
   -> GraphQueries m (E ee e)
 edge _ determiner = GraphQueries $ do
@@ -275,7 +275,7 @@ edge _ determiner = GraphQueries $ do
 -- | Ask for all edges incoming to some Vertex, subject to a particular
 --   determiner.
 incoming
-  :: forall m e s t d ee et .
+  :: forall m e s t d ee et u u' .
      ( Edge m e
      , Vertex m t
      , Vertex m s
@@ -284,8 +284,8 @@ incoming
      , et ~ EngineVertex m t
      , ee ~ EngineEdge m e
      )
-  => Proxy e
-  -> Proxy s
+  => u e
+  -> u' s
   -- ^ Must disambiguate the source vertex.
   -> d
   -- ^ A determiner
@@ -303,7 +303,7 @@ incoming _ proxyS determiner vertex = GraphQueries $ do
 -- | Ask for all edges outgoing from some Vertex, subject to a particular
 --   determiner.
 outgoing
-  :: forall m e v s t d ee es .
+  :: forall m e v s t d ee es u u' .
      ( Edge m e
      , Vertex m s
      , Vertex m t
@@ -312,8 +312,8 @@ outgoing
      , es ~ EngineVertex m s
      , ee ~ EngineEdge m e
      )
-  => Proxy e
-  -> Proxy t
+  => u e
+  -> u' t
   -> d
   -> V es s
   -> GraphQueries m (E ee e)
@@ -326,15 +326,15 @@ outgoing _ proxyT determiner vertex = GraphQueries $ do
 
 -- | Ask for the source of an edge, i.e. the Vertex out of which is extends.
 source
-  :: forall m e s t ee es .
+  :: forall m e s t ee es u u' .
      ( Edge m e
      , Vertex m s
      , EdgeRelated e s t
      , ee ~ EngineEdge m e
      , es ~ EngineVertex m s
      )
-  => Proxy s
-  -> Proxy t
+  => u s
+  -> u' t
   -- ^ We use a proxy to disambiguate the EdgeRelated instance.
   -> E ee e
   -> GraphQueries m (V es s)
@@ -345,15 +345,15 @@ source _ _ edge = GraphQueries $ do
     Just x -> runGraphQueries $ v' x
 
 target
-  :: forall m e s t ee et .
+  :: forall m e s t ee et u u' .
      ( Edge m e
      , Vertex m t
      , EdgeRelated e s t
      , ee ~ EngineEdge m e
      , et ~ EngineVertex m t
      )
-  => Proxy s
-  -> Proxy t
+  => u s
+  -> u' t
   -> E ee e
   -> GraphQueries m (V et t)
 target _ _ edge = GraphQueries $ do
@@ -364,7 +364,7 @@ target _ _ edge = GraphQueries $ do
 
 -- | Get the Vertex across an outgoing edge, subject to an edge determiner.
 adjacentOut
-  :: forall m d e s t es et ee .
+  :: forall m d e s t es et ee u u' .
      ( DeterminesLocalEdge m e s t d
      , EdgeRelated e s t
      , Vertex m s
@@ -373,8 +373,8 @@ adjacentOut
      , et ~ EngineVertex m t
      , ee ~ EngineEdge m e
      )
-  => Proxy e
-  -> Proxy t
+  => u e
+  -> u' t
   -> d
   -> V es s
   -> GraphQueries m (V et t)
@@ -386,7 +386,7 @@ adjacentOut proxyE proxyT d vertex = do
 
 -- | Get the Vertex across an incoming edge, subject to an edge determiner.
 adjacentIn
-  :: forall m d e s t es et ee .
+  :: forall m d e s t es et ee u u' .
      ( DeterminesLocalEdge m e s t d
      , EdgeRelated e s t
      , Vertex m s
@@ -395,8 +395,8 @@ adjacentIn
      , et ~ EngineVertex m t
      , ee ~ EngineEdge m e
      )
-  => Proxy e
-  -> Proxy s
+  => u e
+  -> u' s
   -> d
   -> V et t
   -> GraphQueries m (V es s)
