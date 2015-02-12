@@ -17,8 +17,6 @@ module Data.GraphPatterns.Edge (
   , IfMulti
   ) where
 
-import Data.Proxy
-
 import Data.GraphPatterns.GraphEngine
 import Data.GraphPatterns.Vertex
 import Data.GraphPatterns.Types
@@ -60,7 +58,7 @@ class
   ) => DeterminesLocalEdge m e s t determiner where
 
   toEngineEdgeInformationLocal
-    :: Proxy s
-    -> Proxy t
+    :: u s
+    -> u' t
     -> determiner
     -> EngineEdgeInformation m e
