@@ -280,17 +280,19 @@ incoming
      , Vertex m t
      , Vertex m s
      , DeterminesLocalEdge m e s t d
+     , EdgeRelated e s t
      , et ~ EngineVertex m t
      , ee ~ EngineEdge m e
      )
-  => Proxy s
+  => Proxy e
+  -> Proxy s
   -- ^ Must disambiguate the source vertex.
   -> d
   -- ^ A determiner
   -> V et t
   -- ^ A V with the target vertex and its engine vertex representation.
   -> GraphQueries m (E ee e)
-incoming proxyS determiner vertex = GraphQueries $ do
+incoming _ proxyS determiner vertex = GraphQueries $ do
   let edgeInfo :: EngineEdgeInformation m e = toEngineEdgeInformationLocal proxyS (Proxy :: Proxy t) determiner
   engineEdges <- liftQ $ getEdgesIn edgeInfo (engineV (Proxy :: Proxy m) vertex)
   -- TODO FIXME check for edge cardinality anomaly
@@ -306,14 +308,16 @@ outgoing
      , Vertex m s
      , Vertex m t
      , DeterminesLocalEdge m e s t d
+     , EdgeRelated e s t
      , es ~ EngineVertex m s
      , ee ~ EngineEdge m e
      )
-  => Proxy t
+  => Proxy e
+  -> Proxy t
   -> d
   -> V es s
   -> GraphQueries m (E ee e)
-outgoing proxyT determiner vertex = GraphQueries $ do
+outgoing _ proxyT determiner vertex = GraphQueries $ do
   let edgeInfo = toEngineEdgeInformationLocal (Proxy :: Proxy s) proxyT determiner
   engineEdges <- liftQ $ getEdgesIn edgeInfo (engineV (Proxy :: Proxy m) vertex)
   -- TODO FIXME check for edge cardinaltiy anomaly
@@ -362,6 +366,7 @@ target _ _ edge = GraphQueries $ do
 adjacentOut
   :: forall m d e s t es et ee .
      ( DeterminesLocalEdge m e s t d
+     , EdgeRelated e s t
      , Vertex m s
      , Vertex m t
      , es ~ EngineVertex m s
@@ -374,7 +379,7 @@ adjacentOut
   -> V es s
   -> GraphQueries m (V et t)
 adjacentOut proxyE proxyT d vertex = do
-  outg :: E ee e <- outgoing proxyT d vertex
+  outg :: E ee e <- outgoing proxyE proxyT d vertex
   -- ^ This type annotation is essential; without it we get ambiguity!
   --target $ E (Left outg)
   target (Proxy :: Proxy s) proxyT outg
@@ -383,6 +388,7 @@ adjacentOut proxyE proxyT d vertex = do
 adjacentIn
   :: forall m d e s t es et ee .
      ( DeterminesLocalEdge m e s t d
+     , EdgeRelated e s t
      , Vertex m s
      , Vertex m t
      , es ~ EngineVertex m s
@@ -395,7 +401,7 @@ adjacentIn
   -> V et t
   -> GraphQueries m (V es s)
 adjacentIn proxyE proxyS d vertex = do
-  inc :: E ee e <- incoming proxyS d vertex
+  inc :: E ee e <- incoming proxyE proxyS d vertex
   source proxyS (Proxy :: Proxy t) inc
 
 -- | Now we turn our attention to the GraphMutations monad for mutating a graph.

@@ -57,10 +57,6 @@ class EdgeRelated e s t where
 class 
   ( GraphEngine m
   , Edge m e
-  , EdgeRelated e s t
-    -- ^ The above two conjuncts fix EdgeSource m e ~ EdgeTarget m e just in
-    --   case the direction is Both (if it's not both, they degenerate to
-    --   v ~ v
   ) => DeterminesLocalEdge m e s t determiner where
 
   toEngineEdgeInformationLocal
