@@ -325,7 +325,7 @@ outgoing
   -> GraphQueries m (E ee e)
 outgoing _ proxyT determiner vertex = GraphQueries $ do
   let edgeInfo = toEngineEdgeInformationLocal (Proxy :: Proxy s) proxyT determiner
-  engineEdges <- liftQ $ getEdgesIn edgeInfo (engineV (Proxy :: Proxy m) vertex)
+  engineEdges <- liftQ $ getEdgesOut edgeInfo (engineV (Proxy :: Proxy m) vertex)
   -- TODO FIXME check for edge cardinaltiy anomaly
   engineEdge <- liftListQ $ return engineEdges
   runGraphQueries $ e' engineEdge
