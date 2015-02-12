@@ -157,6 +157,12 @@ instance (Functor m, Applicative m, Monad m) => MonadPlus (GraphQueries m) where
 --   convert to and from EngineVertex.
 data V ev v = V ev v
 
+instance Show v => Show (V ev v) where
+  show (V _ v) = "V " ++ show v
+
+instance Show e => Show (E ee e) where
+  show (E _ e) = "E " ++ show e
+
 -- | Like V, this type is here to prevent superfluous conversions from
 --   engine types.
 data E ee e = E ee e
