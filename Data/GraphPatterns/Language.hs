@@ -228,6 +228,20 @@ v' engineVertex = GraphQueries $ do
     Nothing -> resultNotOk VertexTranslationAnomaly
     Just vertex -> resultOk [V engineVertex vertex]
 
+-- | Like v' but will not introduce an anomaly.
+v''
+  :: forall m v ev .
+     ( EngineVertex m v ~ ev
+     , Vertex m v
+     )
+  => ev
+  -> GraphQueries m (V ev v)
+v'' engineVertex = GraphQueries $ do
+  let maybeVertex :: Maybe v = fromEngineVertex engineVertex
+  case maybeVertex of
+    Nothing -> resultOk []
+    Just vertex -> resultOk [V engineVertex vertex]
+
 -- Injection into E; this can only be done within the GraphQueries
 -- monad, because an EngineEdge must also be defined!
 e'
@@ -348,7 +362,10 @@ source _ _ edge = GraphQueries $ do
   sourceVertex <- liftQ $ getSourceVertex (engineE (Proxy :: Proxy m) edge)
   case sourceVertex of
     Nothing -> resultNotOk undefined -- TODO proper anomaly.
-    Just x -> runGraphQueries $ v' x
+    -- This must not cause a VertexTranslationAnomaly, because it's
+    -- expected that the thing may not be of the appropriate type (the
+    -- edge may relate other things of that type!).
+    Just x -> runGraphQueries $ v'' x
 
 target
   :: forall m e s t ee et u u' .
@@ -366,7 +383,7 @@ target _ _ edge = GraphQueries $ do
   targetVertex <- liftQ $ getTargetVertex (engineE (Proxy :: Proxy m) edge)
   case targetVertex of
     Nothing -> resultNotOk undefined -- TODO proper anomaly
-    Just x -> runGraphQueries $ v' x
+    Just x -> runGraphQueries $ v'' x
 
 -- | Get the Vertex across an outgoing edge, subject to an edge determiner.
 adjacentOut
