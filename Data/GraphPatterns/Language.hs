@@ -107,18 +107,18 @@ mbind (Left l) = return $ Left l
 mbind (Right list) = list
 
 resultOk :: (Applicative m, Monad m) => [a] -> QueryResultT m a
-resultOk = QueryResultT . toMList . fmap Right
+resultOk = QueryResultT . ml_fromlist . fmap Right
 
 resultNotOk :: (Applicative m, Monad m) => Anomaly -> QueryResultT m a
 resultNotOk = QueryResultT . return . Left
 
 -- Lift some monadic value into QueryResult.
 liftQ :: (Functor m, Monad m) => m a -> QueryResultT m a
-liftQ x = QueryResultT $ (fmap Right x) `mlistCons` mlistEmpty
+liftQ x = QueryResultT $ (fmap Right x) `ml_cons` ml_empty
 
 --liftListQ :: (Functor m, Monad m) => m [a] -> QueryResultT m a
 liftListQ val = QueryResultT $ do
-  x <- convertToMList val
+  x <- ml_tolist' val
   return $ Right x
 
 -- | Our query EDSL is just a new name for the QueryResult monad, over some
@@ -143,13 +143,13 @@ instance (Functor m, Applicative m, Monad m) => Monad (GraphQueries m) where
     (runGraphQueries . k) y
 
 instance (Functor m, Applicative m, Monad m) => Alternative (GraphQueries m) where
-  empty = GraphQueries $ QueryResultT mlistEmpty
-  x <|> y = GraphQueries $ QueryResultT (x' `mlistAppend` y')
+  empty = GraphQueries $ QueryResultT ml_empty
+  x <|> y = GraphQueries $ QueryResultT (x' `ml_append` y')
     where x' = runQueryResultT . runGraphQueries $ x
           y' = runQueryResultT . runGraphQueries $ y
 
 instance (Functor m, Applicative m, Monad m) => MonadPlus (GraphQueries m) where
-  mzero = GraphQueries $ QueryResultT mlistEmpty
+  mzero = GraphQueries $ QueryResultT ml_empty
   mplus = (<|>)
 
 -- | This type carries an EngineVertex and a Vertex. It shall be produced
@@ -534,12 +534,13 @@ type GraphPatternsResult = QueryResultT
 query :: GraphQueries m a -> GraphPatterns m a
 query = GraphPatterns
 
-mutation :: Monad m => GraphMutations m a -> GraphPatterns m a
+mutation :: (Functor m, Monad m) => GraphMutations m a -> GraphPatterns m a
 mutation m = GraphPatterns . GraphQueries . QueryResultT $ x
-  where x = mlistCons (runGraphMutations m) mlistEmpty
+  where
+    x = ml_cons (runGraphMutations m) ml_empty
 
 runGraphPatterns :: GraphPatterns m a -> GraphPatternsResult m a
 runGraphPatterns = runGraphQueries . unGraphPatterns
 
 runGraphPatterns' :: (Applicative m, Monad m) => GraphPatterns m a -> m [Either Anomaly a]
-runGraphPatterns' = fromMList . runQueryResult . runGraphPatterns
+runGraphPatterns' = ml_tolist . runQueryResult . runGraphPatterns

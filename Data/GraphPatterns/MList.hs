@@ -2,23 +2,22 @@ module Data.GraphPatterns.MList (
 
     MList
 
-  , fromMList
-  , convertToMList
-  , toMList
+  , ml_tolist
+  , ml_tolist'
+  , ml_fromlist
 
-  , mlistEmpty
-  , mlistCons
-  , mlistAppend
-  , mlistConcat
-  , mlistTake
+  , ml_singleton
+  , ml_empty
+  , ml_cons
+  , ml_append
+  , ml_concat
+  , ml_take
 
   ) where
 
 import Prelude hiding (concat)
 import Control.Applicative
 import Control.Monad
-
-import Control.Monad.Identity
 import Control.Monad.Trans.Class
 import Control.Monad.Trans.State
 
@@ -32,13 +31,13 @@ instance Functor m => Functor (MList m) where
   fmap f = MList . (fmap . fmap) f' . runMList
     where f' (x, next) = (f x, fmap f next)
 
-instance (Applicative m) => Applicative (MList m) where
-  pure x = MList $ pure (Just (x, MList $ pure Nothing))
-  f <*> x = undefined -- ap f x
+instance (Applicative m, Monad m) => Applicative (MList m) where
+  pure = ml_singleton
+  fs <*> xs = ml_concat $ fmap (\f -> fmap f xs) fs
 
-instance Alternative m => Alternative (MList m) where
+instance (Alternative m, Monad m) => Alternative (MList m) where
   empty = MList empty
-  (<|>) = undefined
+  (<|>) = ml_append
 
 instance (Applicative m, Monad m) => Monad (MList m) where
   return = pure
@@ -46,62 +45,62 @@ instance (Applicative m, Monad m) => Monad (MList m) where
     x' <- runMList x
     case x' of
       Nothing -> return Nothing
-      Just (x'', next) -> runMList $ (k x'') `mlistAppend` (next >>= k)
+      Just (x'', next) -> runMList $ (k x'') `ml_append` (next >>= k)
 
 instance (Applicative m, MonadPlus m) => MonadPlus (MList m) where
   mzero = MList mzero
-  mplus = undefined
+  mplus = ml_append
 
 instance MonadTrans MList where
-  lift mt = MList $ liftM (\x -> Just (x, mlistEmpty)) mt
+  lift mt = MList $ liftM (\x -> Just (x, ml_empty)) mt
 
-mlistAppend :: Monad m => MList m a -> MList m a -> MList m a
-mlistAppend first second = MList $ do
-  head <- runMList first
-  case head of
-    Nothing -> runMList second
-    Just (h, rest) -> return $ Just (h, mlistAppend rest second)
+ml_empty :: Monad m => MList m a
+ml_empty = MList $ return Nothing
 
-mlistEmpty :: Monad m => MList m a
-mlistEmpty = MList $ return Nothing
+ml_singleton :: Monad m => a -> MList m a
+ml_singleton x = MList $ return (Just (x, ml_empty))
 
-mlistCons :: Monad m => m a -> MList m a -> MList m a
-mlistCons x rest = MList $ do
-  x' <- x
-  return $ Just (x', rest)
+ml_append :: Monad m => MList m a -> MList m a -> MList m a
+ml_append first second = MList $ do
+    head <- runMList first
+    case head of
+        Nothing -> runMList second
+        Just (h, rest) -> return $ Just (h, ml_append rest second)
 
-convertToMList :: Monad m => m [a] -> MList m a
-convertToMList val = MList $ do
-  list <- val
-  case list of
-    [] -> return Nothing
-    (x : xs) -> return $ Just (x, convertToMList (return xs))
+ml_cons :: (Functor m, Monad m) => m a -> MList m a -> MList m a
+ml_cons x rest = MList $ fmap (\y -> Just (y, rest)) x
 
-toMList :: Monad m => [a] -> MList m a
---toMList [] = MList $ return Nothing
---toMList (x:xs) = MList $ return (Just (x, toMList xs))
-toMList [] = mlistEmpty
-toMList (x:xs) = mlistCons (return x) (toMList xs)
-
-fromMList :: (Applicative m, Monad m) => MList m a -> m [a]
-fromMList x = do
-  head <- runMList x
-  case head of
-    Nothing -> return []
-    Just (x', rest) -> (:) <$> return x' <*> fromMList rest
-
-mlistConcat :: Monad m => MList m (MList m a) -> MList m a
-mlistConcat x = MList $ do
+ml_concat :: Monad m => MList m (MList m a) -> MList m a
+ml_concat x = MList $ do
   head <- runMList x
   case head of
     Nothing -> return Nothing
-    Just (anMList, rest) -> runMList $ mlistAppend anMList (mlistConcat rest)
+    Just (anMList, rest) -> runMList $ ml_append anMList (ml_concat rest)
 
-mlistTake :: Monad m => Int -> MList m a -> m [a]
-mlistTake n x = case n of
+ml_take :: Monad m => Int -> MList m a -> m [a]
+ml_take n x = case n of
   0 -> return []
   n -> do
     head <- runMList x
     case head of
       Nothing -> return []
-      Just (x', rest) -> liftM ((:) x') (mlistTake (n-1) rest)
+      Just (x', rest) -> liftM ((:) x') (ml_take (n-1) rest)
+
+ml_fromlist :: (Applicative m, Monad m) => [a] -> MList m a
+ml_fromlist [] = ml_empty
+ml_fromlist (x:xs) = ml_cons (return x) (ml_fromlist xs)
+
+-- | Get a list, forcing all monadic effects.
+ml_tolist :: (Applicative m, Monad m) => MList m a -> m [a]
+ml_tolist x = do
+  head <- runMList x
+  case head of
+    Nothing -> return []
+    Just (x', rest) -> (:) <$> return x' <*> ml_tolist rest
+
+ml_tolist' :: Monad m => m [a] -> MList m a
+ml_tolist' val = MList $ do
+  list <- val
+  case list of
+    [] -> return Nothing
+    (x : xs) -> return $ Just (x, ml_tolist' (return xs))
