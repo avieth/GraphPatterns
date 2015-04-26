@@ -21,7 +21,7 @@ module Data.GraphPatterns.Engines.FunctionalGraph (
 import qualified Data.Map as M
 import Control.Applicative
 import Control.Monad.Trans.State
-import Control.Monad.Identity
+import Data.Functor.Identity
 
 import Data.Graph.Inductive.Graph
 import Data.Graph.Inductive.PatriciaTree
