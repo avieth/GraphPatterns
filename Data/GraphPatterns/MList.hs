@@ -3,8 +3,8 @@ module Data.GraphPatterns.MList (
     MList
 
   , ml_tolist
-  , ml_tolist'
   , ml_fromlist
+  , ml_fromlist'
 
   , ml_singleton
   , ml_empty
@@ -90,6 +90,13 @@ ml_fromlist :: (Applicative m, Monad m) => [a] -> MList m a
 ml_fromlist [] = ml_empty
 ml_fromlist (x:xs) = ml_cons (return x) (ml_fromlist xs)
 
+ml_fromlist' :: Monad m => m [a] -> MList m a
+ml_fromlist' val = MList $ do
+  list <- val
+  case list of
+    [] -> return Nothing
+    (x : xs) -> return $ Just (x, ml_fromlist' (return xs))
+
 -- | Get a list, forcing all monadic effects.
 ml_tolist :: (Applicative m, Monad m) => MList m a -> m [a]
 ml_tolist x = do
@@ -97,10 +104,3 @@ ml_tolist x = do
   case head of
     Nothing -> return []
     Just (x', rest) -> (:) <$> return x' <*> ml_tolist rest
-
-ml_tolist' :: Monad m => m [a] -> MList m a
-ml_tolist' val = MList $ do
-  list <- val
-  case list of
-    [] -> return Nothing
-    (x : xs) -> return $ Just (x, ml_tolist' (return xs))
