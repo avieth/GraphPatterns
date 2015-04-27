@@ -35,8 +35,8 @@ instance (Applicative m, Monad m) => Applicative (MList m) where
   pure = ml_singleton
   fs <*> xs = ml_concat $ fmap (\f -> fmap f xs) fs
 
-instance (Alternative m, Monad m) => Alternative (MList m) where
-  empty = MList empty
+instance (Applicative m, Monad m) => Alternative (MList m) where
+  empty = ml_empty
   (<|>) = ml_append
 
 instance (Applicative m, Monad m) => Monad (MList m) where
@@ -47,8 +47,8 @@ instance (Applicative m, Monad m) => Monad (MList m) where
       Nothing -> return Nothing
       Just (x'', next) -> runMList $ (k x'') `ml_append` (next >>= k)
 
-instance (Applicative m, MonadPlus m) => MonadPlus (MList m) where
-  mzero = MList mzero
+instance (Applicative m, Monad m) => MonadPlus (MList m) where
+  mzero = ml_empty
   mplus = ml_append
 
 instance MonadTrans MList where

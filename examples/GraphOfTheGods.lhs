@@ -356,7 +356,7 @@ FunctionalGraph.
 >   toEngineVertexInsertion (Titan (Name name) age) = FGVertexInsertion (VertexLabel $
 >       M.fromList [("haskellType", "Titan"), ("name", name), ("age", show age)]
 >     )
->   fromEngineVertex (FGVertex (_, evertex)) = rightType >> (Titan <$> name <*> age)
+>   fromEngineVertex (FGVertex (_, evertex)) = return (rightType >> (Titan <$> name <*> age))
 >     where
 >       propertyMap = vertexProperties evertex
 >       rightType = M.lookup "haskellType" propertyMap >>= guard . ((==) "Titan")
@@ -372,7 +372,7 @@ FunctionalGraph.
 >   toEngineVertexInsertion (God (Name name) age) = FGVertexInsertion (VertexLabel $
 >       M.fromList [("haskellType", "God"), ("name", name), ("age", show age)]
 >     )
->   fromEngineVertex (FGVertex (_, evertex)) = rightType >> (God <$> name <*> age)
+>   fromEngineVertex (FGVertex (_, evertex)) = return (rightType >> (God <$> name <*> age))
 >     where
 >       propertyMap = vertexProperties evertex
 >       rightType = M.lookup "haskellType" propertyMap >>= guard . ((==) "God")
@@ -387,7 +387,7 @@ FunctionalGraph.
 >   toEngineVertexInsertion (Demigod (Name name) age) = FGVertexInsertion (VertexLabel $
 >       M.fromList [("haskellType", "Demigod"), ("name", name), ("age", show age)]
 >     )
->   fromEngineVertex (FGVertex (_, evertex)) = rightType >> (Demigod <$> name <*> age)
+>   fromEngineVertex (FGVertex (_, evertex)) = return (rightType >> (Demigod <$> name <*> age))
 >     where
 >       propertyMap = vertexProperties evertex
 >       rightType = M.lookup "haskellType" propertyMap >>= guard . ((==) "Demigod")
@@ -402,7 +402,7 @@ FunctionalGraph.
 >   toEngineVertexInsertion (Human (Name name) age) = FGVertexInsertion (VertexLabel $
 >       M.fromList [("haskellType", "Human"), ("name", name), ("age", show age)]
 >     )
->   fromEngineVertex (FGVertex (_, evertex)) = rightType >> (Human <$> name <*> age)
+>   fromEngineVertex (FGVertex (_, evertex)) = return (rightType >> (Human <$> name <*> age))
 >     where
 >       propertyMap = vertexProperties evertex
 >       rightType = M.lookup "haskellType" propertyMap >>= guard . ((==) "Human")
@@ -417,7 +417,7 @@ FunctionalGraph.
 >   toEngineVertexInsertion (Monster (Name name)) = FGVertexInsertion (VertexLabel $
 >       M.fromList [("haskellType", "Monster"), ("name", name)]
 >     )
->   fromEngineVertex (FGVertex (_, evertex)) = rightType >> (Monster <$> name)
+>   fromEngineVertex (FGVertex (_, evertex)) = return (rightType >> (Monster <$> name))
 >     where
 >       propertyMap = vertexProperties evertex
 >       rightType = M.lookup "haskellType" propertyMap >>= guard . ((==) "Monster")
@@ -427,7 +427,7 @@ FunctionalGraph.
 >   toEngineVertexInsertion (Location (Name name)) = FGVertexInsertion (VertexLabel $
 >       M.fromList [("haskellType", "Location"), ("name", name)]
 >     )
->   fromEngineVertex (FGVertex (_, evertex)) = rightType >> (Location <$> name)
+>   fromEngineVertex (FGVertex (_, evertex)) = return (rightType >> (Location <$> name))
 >     where
 >       propertyMap = vertexProperties evertex
 >       rightType = M.lookup "haskellType" propertyMap >>= guard . ((==) "Location")
@@ -437,7 +437,7 @@ FunctionalGraph.
 >   toEngineEdgeInsertion IsFather = FGEdgeInsertion (EdgeLabel $
 >       M.fromList [("haskellType", "IsFather")]
 >     )
->   fromEngineEdge (FGEdge (_, _, eedge)) = rightType >> pure IsFather
+>   fromEngineEdge (FGEdge (_, _, eedge)) = return (rightType >> pure IsFather)
 >     where
 >       propertyMap = edgeProperties eedge
 >       rightType = M.lookup "haskellType" propertyMap >>= guard . ((==) "IsFather")
@@ -446,7 +446,7 @@ FunctionalGraph.
 >   toEngineEdgeInsertion IsMother = FGEdgeInsertion (EdgeLabel $
 >       M.fromList [("haskellType", "IsMother")]
 >     )
->   fromEngineEdge (FGEdge (_, _, eedge)) = rightType >> pure IsMother
+>   fromEngineEdge (FGEdge (_, _, eedge)) = return (rightType >> pure IsMother)
 >     where
 >       propertyMap = edgeProperties eedge
 >       rightType = M.lookup "haskellType" propertyMap >>= guard . ((==) "IsMother")
@@ -455,7 +455,7 @@ FunctionalGraph.
 >   toEngineEdgeInsertion IsBrother = FGEdgeInsertion (EdgeLabel $
 >       M.fromList [("haskellType", "IsBrother")]
 >     )
->   fromEngineEdge (FGEdge (_, _, eedge)) = rightType >> pure IsBrother
+>   fromEngineEdge (FGEdge (_, _, eedge)) = return (rightType >> pure IsBrother)
 >     where
 >       propertyMap = edgeProperties eedge
 >       rightType = M.lookup "haskellType" propertyMap >>= guard . ((==) "IsBrother")
@@ -464,7 +464,7 @@ FunctionalGraph.
 >   toEngineEdgeInsertion IsPet = FGEdgeInsertion (EdgeLabel $
 >       M.fromList [("haskellType", "IsPet")]
 >     )
->   fromEngineEdge (FGEdge (_, _, eedge)) = rightType >> pure IsPet
+>   fromEngineEdge (FGEdge (_, _, eedge)) = return (rightType >> pure IsPet)
 >     where
 >       propertyMap = edgeProperties eedge
 >       rightType = M.lookup "haskellType" propertyMap >>= guard . ((==) "IsPet")
@@ -473,7 +473,7 @@ FunctionalGraph.
 >   toEngineEdgeInsertion (Battled time place) = FGEdgeInsertion (EdgeLabel $
 >       M.fromList [("haskellType", "Battled"), ("time", show time), ("place", show place)]
 >     )
->   fromEngineEdge (FGEdge (_, _, eedge)) = rightType >> (Battled <$> time <*> place)
+>   fromEngineEdge (FGEdge (_, _, eedge)) = return (rightType >> (Battled <$> time <*> place))
 >     where
 >       propertyMap = edgeProperties eedge
 >       rightType = M.lookup "haskellType" propertyMap >>= guard . ((==) "Battled")
@@ -492,7 +492,7 @@ FunctionalGraph.
 >   toEngineEdgeInsertion (Lives reason) = FGEdgeInsertion (EdgeLabel $
 >       M.fromList [("haskellType", "Lives"), ("reason", show reason)]
 >     )
->   fromEngineEdge (FGEdge (_, _, eedge)) = rightType >> (Lives <$> reason)
+>   fromEngineEdge (FGEdge (_, _, eedge)) = return (rightType >> (Lives <$> reason))
 >     where
 >       propertyMap = edgeProperties eedge
 >       rightType = M.lookup "haskellType" propertyMap >>= guard . ((==) "Lives")

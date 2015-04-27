@@ -25,7 +25,7 @@ import Data.GraphPatterns.Types
 --   into EngineEdge m for some GraphEngine m.
 class (GraphEngine m) => Edge m e where
   toEngineEdgeInsertion :: e -> EngineEdgeInsertion m e
-  fromEngineEdge :: EngineEdge m e -> Maybe e
+  fromEngineEdge :: EngineEdge m e -> (Effect m) ((Result m) e)
 
 -- | With an instance of this class we assert that a given type d can be used
 --   to pick out a bunch of edges in a graph without using topological
@@ -56,7 +56,6 @@ class
   ( GraphEngine m
   , Edge m e
   ) => DeterminesLocalEdge m e s t determiner where
-
   toEngineEdgeInformationLocal
     :: u s
     -> u' t

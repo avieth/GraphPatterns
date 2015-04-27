@@ -4,7 +4,6 @@
 
 module Data.GraphPatterns.Engines.FunctionalGraph (
     FunctionalGraph
-  , runFunctionalGraph
   , FGraph
   , VertexLabel(..)
   , EdgeLabel(..)
@@ -61,16 +60,24 @@ matchProperties k0 k1 = M.foldrWithKey combine True k0
 
 -- | The functional graph monad keeps a pure FGraph in state, so that we can
 --   query and update.
+{-
 newtype FunctionalGraph a = FG {
     runFG :: StateT FGraph Identity a
   } deriving (Functor, Applicative, Monad)
 
 runFunctionalGraph :: FGraph -> FunctionalGraph a -> (a, FGraph)
 runFunctionalGraph graph = runIdentity . (flip runStateT) graph . runFG
+-}
+
+data FunctionalGraph = FG
 
 instance GraphEngine FunctionalGraph where
 
   type EngineGraph FunctionalGraph = FGraph
+
+  type Effect FunctionalGraph = StateT FGraph Identity
+
+  type Result FunctionalGraph = Maybe
 
   data EngineVertex FunctionalGraph v = FGVertex (LNode VertexLabel)
 
@@ -84,17 +91,17 @@ instance GraphEngine FunctionalGraph where
 
   data EngineEdgeInformation FunctionalGraph e = FGEdgeInfo (M.Map MapKey MapValue)
 
-  getTargetVertex (FGEdge (_, node, _)) = FG $ do
+  getTargetVertex (FGEdge (_, node, _)) = do
       graph <- get
       return $ fmap (\label -> FGVertex (node, label)) (lab graph node)
 
-  getSourceVertex (FGEdge (node, _, _)) = FG $ do
+  getSourceVertex (FGEdge (node, _, _)) = do
       graph <- get
       return $ fmap (\label -> FGVertex (node, label)) (lab graph node)
 
-  getVertices (FGVertexInfo properties) = FG $ do
+  getVertices (FGVertexInfo properties) = do
       graph <- get
-      return $ ufold combine [] graph
+      return $ fmap Just (ufold combine [] graph)
         where combine (_, n, label, _) xs =
                 if matchProperties properties (vertexProperties label)
                 then FGVertex (n, label) : xs
@@ -102,27 +109,27 @@ instance GraphEngine FunctionalGraph where
 
   -- I don't know if there's a more efficient way to do this. We just grab
   -- all labelled edges and check each one.
-  getEdges (FGEdgeInfo properties) = FG $ do
+  getEdges (FGEdgeInfo properties) = do
       graph <- get
       let edges = labEdges graph
-      return $ foldr combine [] edges
+      return $ fmap Just (foldr combine [] edges)
         where combine e@(_, _, label) xs =
                 if matchProperties properties (edgeProperties label)
                 then FGEdge e : xs
                 else xs
 
-  getEdgesOut (FGEdgeInfo properties) (FGVertex (n, _)) = FG $ do
+  getEdgesOut (FGEdgeInfo properties) (FGVertex (n, _)) = do
       graph <- get
       -- Yes, this may error; we'll fix FGL later.
       let edges = out graph . node' . context graph $ n
-      return $ map FGEdge $ filter (\(_,_,l) -> matchProperties properties (edgeProperties l)) edges
+      return $ map (Just . FGEdge) $ filter (\(_,_,l) -> matchProperties properties (edgeProperties l)) edges
 
-  getEdgesIn (FGEdgeInfo properties) (FGVertex (n, _)) = FG $ do
+  getEdgesIn (FGEdgeInfo properties) (FGVertex (n, _)) = do
       graph <- get
       let edges = inn graph . node' . context graph $ n
-      return $ map FGEdge $ filter (\(_,_,l) -> matchProperties properties (edgeProperties l)) edges
+      return $ map (Just . FGEdge) $ filter (\(_,_,l) -> matchProperties properties (edgeProperties l)) edges
 
-  insertVertex (FGVertexInsertion label) = FG $ do
+  insertVertex (FGVertexInsertion label) = do
       graph <- get
       let nodes = newNodes 1 graph
       case nodes of
@@ -131,7 +138,7 @@ instance GraphEngine FunctionalGraph where
             put $ insNode (node, label) graph
             return $ Just (FGVertex (node, label))
 
-  insertEdge (FGEdgeInsertion label) (FGVertex (u, _)) (FGVertex (v, _)) = FG $ do
+  insertEdge (FGEdgeInsertion label) (FGVertex (u, _)) (FGVertex (v, _)) = do
       -- If we've done anything right, the typechecker should have guaranteed
       -- that the two vertices are of the right type.
       graph <- get
