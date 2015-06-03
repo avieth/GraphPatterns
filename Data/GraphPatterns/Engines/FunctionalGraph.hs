@@ -3,6 +3,7 @@
 {-# LANGUAGE DeriveFunctor #-}
 
 module Data.GraphPatterns.Engines.FunctionalGraph (
+
     FunctionalGraph
   , FGraph
   , VertexLabel(..)
@@ -15,6 +16,7 @@ module Data.GraphPatterns.Engines.FunctionalGraph (
   , EngineEdgeInformation(..)
   , MapKey
   , MapValue
+
   ) where
 
 import qualified Data.Map as M

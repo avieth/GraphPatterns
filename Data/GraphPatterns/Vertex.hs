@@ -3,25 +3,25 @@
 {-# LANGUAGE TypeFamilies #-}
 
 module Data.GraphPatterns.Vertex (
+
     Vertex(..)
   , DeterminesVertex(..)
+
   ) where
 
 import Data.Proxy
 import Data.GraphPatterns.GraphEngine
 
-class GraphEngine m => Vertex m v where
-  toEngineVertexInsertion :: v -> EngineVertexInsertion m v
-  fromEngineVertex :: EngineVertex m v -> (Effect m) ((Result m) v)
-  -- ^ A way to go from an EngineVertex m v to a "proper" value of the user
-  --   defined type. We give no v -> EngineVertex m v because the GraphEngine
-  --   is the only party licenced to create EngineVertex m v instances.
+-- | A Haskell datatype can be treated as a Vertex in a given GraphEngine.
+class GraphEngine g => Vertex g v where
+  toEngineVertexInsertion :: Proxy g -> v -> EngineVertexInsertion g v
+  fromEngineVertex :: Proxy g -> Proxy v -> EngineVertex g v -> GraphEngineMonad g v
 
 -- | Can't do a default reflexive instance because we don't know if a given
 --   Vertex is unique, nor do we know how to dump it to EngineVertexInformation.
-class Vertex m v => DeterminesVertex m v determiner where
-  -- One of Unique or NotUnique
-  type VertexUniqueness m v determiner :: *
+class Vertex g v => DeterminesVertex g v determiner where
   toEngineVertexInformation
-    :: determiner
-    -> EngineVertexInformation m v
+    :: Proxy g
+    -> Proxy v
+    -> determiner
+    -> EngineVertexInformation g v

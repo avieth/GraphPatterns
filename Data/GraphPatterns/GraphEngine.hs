@@ -19,72 +19,101 @@ module Data.GraphPatterns.GraphEngine (
 
 import Control.Applicative
 import Control.Monad
-import Control.Monad.TransT
+import Data.Proxy
 
-class  ( Functor (Result m)
-       , Applicative (Result m)
-       , Monad (Result m)
-       , CommuteM (Result m)
-       , Functor (Effect m)
-       , Applicative (Effect m)
-       , Monad (Effect m)
-       )
-    => GraphEngine m where
+class
+    ( Functor (GraphEngineMonad g)
+    , Applicative (GraphEngineMonad g)
+    , Monad (GraphEngineMonad g)
+    ) => GraphEngine g
+  where
 
-  -- | Type of the thing which represents the graph data.
-  --   TBD necessary? Should remove I think.
-  type EngineGraph m :: *
+    type GraphEngineMonad g :: * -> *
 
-  -- | TODO explain these
-  type Effect m :: * -> *
-  type Result m :: * -> *
+    -- | Type of vertices. Each member of this type must identify at most one
+    --   vertex in an EngineGraph.
+    type EngineVertex g v :: *
 
-  -- | Type of vertices. Each member of this type must identify at most one
-  --   vertex in an EngineGraph.
-  data EngineVertex m v :: *
+    -- | Type of edges. Each member of this type must identify at most one
+    --   edge in an EngineGraph.
+    type EngineEdge g e :: *
 
-  -- | Type of edges. Each member of this type must identify at most one
-  --   edge in an EngineGraph.
-  data EngineEdge m e :: *
+    -- | Vertex and Edge instances must provide injections into these types so
+    --   that edges and vertices can be inserted into a graph. The GraphEngine
+    --   will produce EngineVertex and EngineEdge instances from these via
+    --   insertVertex, insertEdge.
+    type EngineVertexInsertion g v :: *
+    type EngineEdgeInsertion g e :: *
 
-  -- | Vertex and Edge instances must provide injections into these types so
-  --   that edges and vertices can be inserted into a graph. The GraphEngine
-  --   will produce EngineVertex and EngineEdge instances from these via
-  --   insertVertex, insertEdge.
-  data EngineVertexInsertion m v :: *
-  data EngineEdgeInsertion m e :: *
+    -- | Type of (possibly partial) vertex information. Each member of this type
+    --   must characterize 0 or more vertices in an EngineGraph.
+    type EngineVertexInformation g v :: *
+    type EngineEdgeInformation g e :: *
 
-  -- | Type of (possibly partial) vertex information. Each member of this type
-  --   must characterize 0 or more vertices in an EngineGraph.
-  data EngineVertexInformation m v :: *
-  data EngineEdgeInformation m e :: *
+    -- | Get the terminal vertex of an edge.
+    getTargetVertex
+      :: Proxy g
+      -> Proxy e
+      -> Proxy v
+      -> EngineEdge g e
+      -> GraphEngineMonad g (EngineVertex g v)
 
-  -- | Get the terminal vertex of an edge.
-  getTargetVertex :: EngineEdge m e -> (Effect m) (Result m (EngineVertex m v))
+    -- | Get the source vertex of an edge.
+    getSourceVertex
+      :: Proxy g
+      -> Proxy e
+      -> Proxy v
+      -> EngineEdge g e
+      -> GraphEngineMonad g (EngineVertex g v)
 
-  -- | Get the source vertex of an edge.
-  getSourceVertex :: EngineEdge m e -> (Effect m) (Result m (EngineVertex m v))
+    -- | Get zero, one, or many @EngineVertex@s from relevant information.
+    getVertices
+      :: Proxy g
+      -> Proxy v
+      -> EngineVertexInformation g v
+      -> GraphEngineMonad g (EngineVertex g v)
 
-  -- | Get zero, one, or many @EngineVertex@s from relevant information.
-  getVertices :: EngineVertexInformation m v -> (Effect m) [(Result m) (EngineVertex m v)]
+    -- | Get zero, one, or many @EngineEdge@s from relevant information.
+    getEdges
+      :: Proxy g
+      -> Proxy e
+      -> EngineEdgeInformation g e
+      -> GraphEngineMonad g (EngineEdge g e)
 
-  -- | Get zero, one, or many @EngineEdge@s from relevant information.
-  getEdges :: EngineEdgeInformation m e -> (Effect m) [(Result m) (EngineEdge m e)]
+    -- | Get all edges initiating from a vertex, and satisfying some
+    --   characterization.
+    getEdgesOut
+      :: Proxy g
+      -> Proxy e
+      -> Proxy v
+      -> EngineEdgeInformation g e
+      -> EngineVertex g v
+      -> GraphEngineMonad g (EngineEdge g e)
 
-  -- | Get all edges initiating from a vertex, and satisfying some
-  --   characterization.
-  getEdgesOut :: EngineEdgeInformation m e -> EngineVertex m v -> (Effect m) [(Result m) (EngineEdge m e)]
+    -- | Get all edges terminating at a vertex, and satisying some
+    --   characterization.
+    getEdgesIn
+      :: Proxy g
+      -> Proxy e
+      -> Proxy v
+      -> EngineEdgeInformation g e
+      -> EngineVertex g v
+      -> GraphEngineMonad g (EngineEdge g e)
 
-  -- | Get all edges terminating at a vertex, and satisying some
-  --   characterization.
-  getEdgesIn :: EngineEdgeInformation m e -> EngineVertex m v -> (Effect m) [(Result m) (EngineEdge m e)]
+    -- | Insert a vertex into a graph.
+    insertVertex
+      :: Proxy g
+      -> Proxy v
+      -> EngineVertexInsertion g v
+      -> GraphEngineMonad g (EngineVertex g v)
 
-  -- | Insert a vertex into a graph.
-  insertVertex :: EngineVertexInsertion m v -> (Effect m) ((Result m) (EngineVertex m v))
-
-  -- | Insert an edge into a graph.
-  insertEdge
-    :: EngineEdgeInsertion m e
-    -> EngineVertex m u
-    -> EngineVertex m v
-    -> (Effect m) (Result m (EngineEdge m e))
+    -- | Insert an edge into a graph.
+    insertEdge
+      :: Proxy g
+      -> Proxy e
+      -> Proxy srcv
+      -> Proxy tgtv
+      -> EngineEdgeInsertion g e
+      -> EngineVertex g srcv
+      -> EngineVertex g tgtv
+      -> GraphEngineMonad g (EngineEdge g e)

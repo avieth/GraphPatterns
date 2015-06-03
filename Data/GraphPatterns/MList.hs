@@ -18,8 +18,8 @@ module Data.GraphPatterns.MList (
 import Prelude hiding (concat)
 import Control.Applicative
 import Control.Monad
+import Control.Monad.IO.Class
 import Control.Monad.Trans.Class
-import Control.Monad.Trans.State
 
 -- | We begin with a special monad-list type, as seen in the ListT done right
 --   alternative http://www.haskell.org/haskellwiki/ListT_done_right_alternative
@@ -53,6 +53,9 @@ instance (Applicative m, Monad m) => MonadPlus (MList m) where
 
 instance MonadTrans MList where
   lift mt = MList $ liftM (\x -> Just (x, ml_empty)) mt
+
+instance (MonadIO m, Applicative m) => MonadIO (MList m) where
+  liftIO = lift . liftIO
 
 ml_empty :: Monad m => MList m a
 ml_empty = MList $ return Nothing
