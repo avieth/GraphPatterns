@@ -38,6 +38,9 @@ module Data.GraphPatterns.Language (
   , putVertex
   , putEdge
 
+  , query
+  , mutation
+
   ) where
 
 import Control.Monad.FInterpreter
@@ -222,3 +225,9 @@ putEdge proxyE einsert srcv tgtv = liftF (GMEdge proxyE einsert srcv tgtv id)
 
 type GraphPatternsF g = GraphQueryF g :+: GraphMutationF g
 type GraphPatterns g = Free (GraphPatternsF g)
+
+query :: GraphQuery g t -> GraphPatterns g t
+query = injectF
+
+mutation :: GraphMutation g t -> GraphPatterns g t
+mutation = injectF
