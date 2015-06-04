@@ -1,10 +1,12 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE DeriveFunctor #-}
+{-# LANGUAGE KindSignatures #-}
 
 module Data.GraphPatterns.Engines.FunctionalGraph (
 
-    FunctionalGraph
+    FunctionalGraph(..)
+  , runFunctionalGraph
   , FGraph
   , VertexLabel(..)
   , EdgeLabel(..)
@@ -21,7 +23,10 @@ module Data.GraphPatterns.Engines.FunctionalGraph (
 
 import qualified Data.Map as M
 import Control.Applicative
+import Control.Monad
+import Control.Monad.Trans.Class
 import Control.Monad.Trans.State
+import Data.GraphPatterns.MList
 import Data.Functor.Identity
 
 import Data.Graph.Inductive.Graph
@@ -60,89 +65,90 @@ matchProperties :: M.Map MapKey MapValue -> M.Map MapKey MapValue -> Bool
 matchProperties k0 k1 = M.foldrWithKey combine True k0
   where combine k v b = b && maybe False ((==) v) (M.lookup k k1)
 
--- | The functional graph monad keeps a pure FGraph in state, so that we can
---   query and update.
-{-
-newtype FunctionalGraph a = FG {
-    runFG :: StateT FGraph Identity a
-  } deriving (Functor, Applicative, Monad)
+data FunctionalGraph (m :: * -> *) = FG
 
-runFunctionalGraph :: FGraph -> FunctionalGraph a -> (a, FGraph)
-runFunctionalGraph graph = runIdentity . (flip runStateT) graph . runFG
--}
+runFunctionalGraph
+  :: ( Functor m
+     , Monad m
+     )
+  => FGraph
+  -> GraphEngineMonad (FunctionalGraph m) t
+  -> m ([t], FGraph)
+runFunctionalGraph s = (flip runStateT) s . ml_tolist
 
-data FunctionalGraph = FG
+instance (Functor m, Monad m) => GraphEngine (FunctionalGraph m) where
 
-instance GraphEngine FunctionalGraph where
+  type GraphEngineMonad (FunctionalGraph m) = MList (StateT FGraph m)
 
-  type EngineGraph FunctionalGraph = FGraph
+  type EngineVertex (FunctionalGraph m) v = LNode VertexLabel
 
-  type Effect FunctionalGraph = StateT FGraph Identity
+  type EngineEdge (FunctionalGraph m) e = LEdge EdgeLabel
 
-  type Result FunctionalGraph = Maybe
+  type EngineVertexInsertion (FunctionalGraph m) v = VertexLabel
 
-  data EngineVertex FunctionalGraph v = FGVertex (LNode VertexLabel)
+  type EngineEdgeInsertion (FunctionalGraph m) e = EdgeLabel
 
-  data EngineEdge FunctionalGraph e = FGEdge (LEdge EdgeLabel)
+  type EngineVertexInformation (FunctionalGraph m) v = M.Map MapKey MapValue
 
-  data EngineVertexInsertion FunctionalGraph v = FGVertexInsertion VertexLabel
+  type EngineEdgeInformation (FunctionalGraph m) e = M.Map MapKey MapValue
 
-  data EngineEdgeInsertion FunctionalGraph e = FGEdgeInsertion EdgeLabel
+  getTargetVertex proxyG proxyE proxyV (_, node, _) = do
+      graph <- lift get
+      case lab graph node of
+          Nothing -> mzero
+          Just label -> return (node, label)
 
-  data EngineVertexInformation FunctionalGraph v = FGVertexInfo (M.Map MapKey MapValue)
+  getSourceVertex proxyG proxyE proxyV (node, _, _) = do
+      graph <- lift get
+      case lab graph node of
+          Nothing -> mzero
+          Just label -> return (node, label)
 
-  data EngineEdgeInformation FunctionalGraph e = FGEdgeInfo (M.Map MapKey MapValue)
-
-  getTargetVertex (FGEdge (_, node, _)) = do
-      graph <- get
-      return $ fmap (\label -> FGVertex (node, label)) (lab graph node)
-
-  getSourceVertex (FGEdge (node, _, _)) = do
-      graph <- get
-      return $ fmap (\label -> FGVertex (node, label)) (lab graph node)
-
-  getVertices (FGVertexInfo properties) = do
-      graph <- get
-      return $ fmap Just (ufold combine [] graph)
-        where combine (_, n, label, _) xs =
-                if matchProperties properties (vertexProperties label)
-                then FGVertex (n, label) : xs
-                else xs
+  getVertices proxyG proxyV properties = do
+      graph <- lift get
+      let matchingVertices = ufold combine [] graph
+      ml_fromlist matchingVertices
+    where combine (_, n, label, _) xs =
+            if matchProperties properties (vertexProperties label)
+            then (n, label) : xs
+            else xs
 
   -- I don't know if there's a more efficient way to do this. We just grab
   -- all labelled edges and check each one.
-  getEdges (FGEdgeInfo properties) = do
-      graph <- get
+  getEdges proxyG proxyE properties = do
+      graph <- lift get
       let edges = labEdges graph
-      return $ fmap Just (foldr combine [] edges)
-        where combine e@(_, _, label) xs =
-                if matchProperties properties (edgeProperties label)
-                then FGEdge e : xs
-                else xs
+      let matchingEdges = foldr combine [] edges
+      ml_fromlist matchingEdges
+    where
+      combine e@(_, _, label) xs =
+          if matchProperties properties (edgeProperties label)
+          then e : xs
+          else xs
 
-  getEdgesOut (FGEdgeInfo properties) (FGVertex (n, _)) = do
-      graph <- get
+  getEdgesOut proxyG proxyE proxyV properties (n, _) = do
+      graph <- lift get
       -- Yes, this may error; we'll fix FGL later.
       let edges = out graph . node' . context graph $ n
-      return $ map (Just . FGEdge) $ filter (\(_,_,l) -> matchProperties properties (edgeProperties l)) edges
+      let matchingEdges = filter (\(_,_,l) -> matchProperties properties (edgeProperties l)) edges
+      ml_fromlist matchingEdges
 
-  getEdgesIn (FGEdgeInfo properties) (FGVertex (n, _)) = do
-      graph <- get
+  getEdgesIn proxyG proxyE proxyV properties (n, _) = do
+      graph <- lift get
       let edges = inn graph . node' . context graph $ n
-      return $ map (Just . FGEdge) $ filter (\(_,_,l) -> matchProperties properties (edgeProperties l)) edges
+      let matchingEdges = filter (\(_,_,l) -> matchProperties properties (edgeProperties l)) edges
+      ml_fromlist matchingEdges
 
-  insertVertex (FGVertexInsertion label) = do
-      graph <- get
+  insertVertex proxyG proxyV label = do
+      graph <- lift get
       let nodes = newNodes 1 graph
       case nodes of
-        [] -> return Nothing
+        [] -> mzero
         node : _ -> do
-            put $ insNode (node, label) graph
-            return $ Just (FGVertex (node, label))
+            lift $ put (insNode (node, label) graph)
+            return (node, label)
 
-  insertEdge (FGEdgeInsertion label) (FGVertex (u, _)) (FGVertex (v, _)) = do
-      -- If we've done anything right, the typechecker should have guaranteed
-      -- that the two vertices are of the right type.
-      graph <- get
-      put $ insEdge (u, v, label) graph
-      return $ Just (FGEdge (u, v, label))
+  insertEdge proxyG proxyE proxySrc proxyTgt label (srcv, _) (tgtv, _) = do
+      graph <- lift get
+      lift $ (put (insEdge (srcv, tgtv, label) graph))
+      return (srcv, tgtv, label)
