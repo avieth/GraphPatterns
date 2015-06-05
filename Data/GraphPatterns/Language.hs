@@ -10,6 +10,7 @@ Portability : non-portable (GHC only)
 
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE GADTs #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module Data.GraphPatterns.Language (
 
@@ -44,7 +45,7 @@ module Data.GraphPatterns.Language (
   ) where
 
 import Control.Monad.FInterpreter
-import Control.Monad.Free
+import Control.Monad.Trans.Free
 import Data.Proxy
 import Data.GraphPatterns.Vertex
 import Data.GraphPatterns.Edge
@@ -136,51 +137,93 @@ instance Functor (GraphQueryF g) where
         GQSource edg next -> GQSource edg (fmap f next)
         GQTarget edg next -> GQTarget edg (fmap f next)
 
-type GraphQuery g = Free (GraphQueryF g)
+type GraphQuery g = FreeT (GraphQueryF g)
 
-vertex :: Vertex g v => Proxy v -> EngineVertexInformation g v -> GraphQuery g (V g v)
-vertex proxyV vinfo = liftF (GQVertex proxyV vinfo id)
+vertex
+  :: forall g v d m .
+     ( DeterminesVertex g v d
+     , Monad m
+     )
+  => Proxy v
+  -> d
+  -> GraphQuery g m (V g v)
+vertex proxyV determiner = liftF (GQVertex proxyV vinfo id)
+  where
+    vinfo = toEngineVertexInformation (Proxy :: Proxy g) proxyV determiner
 
-edge :: Edge g e => Proxy e -> EngineEdgeInformation g e -> GraphQuery g (E g e)
-edge proxyE einfo = liftF (GQEdge proxyE einfo id)
+edge
+  :: forall g e d m .
+     ( DeterminesEdge g e d
+     , Monad m
+     )
+  => Proxy e
+  -> d
+  -> GraphQuery g m (E g e)
+edge proxyE determiner = liftF (GQEdge proxyE einfo id)
+  where
+    einfo = toEngineEdgeInformation (Proxy :: Proxy g) proxyE determiner
 
 incoming
-  :: Edge g e
+  :: forall g e d m .
+     ( DeterminesLocalEdge g e d
+     , Monad m
+     )
   => Proxy e
-  -> EngineEdgeInformation g e
+  -> d
   -> V g (EdgeTarget g e)
-  -> GraphQuery g (E g e)
-incoming proxyE einfo vert = liftF (GQIncoming proxyE einfo vert id)
+  -> GraphQuery g m (E g e)
+incoming proxyE determiner vert = liftF (GQIncoming proxyE einfo vert id)
+  where
+    einfo = toEngineEdgeInformationLocal (Proxy :: Proxy g) proxyE determiner
 
 outgoing
-  :: Edge g e
+  :: forall g e d m .
+     ( DeterminesLocalEdge g e d
+     , Monad m
+     )
   => Proxy e
-  -> EngineEdgeInformation g e
+  -> d
   -> V g (EdgeSource g e)
-  -> GraphQuery g (E g e)
-outgoing proxyE einfo vert = liftF (GQOutgoing proxyE einfo vert id)
+  -> GraphQuery g m (E g e)
+outgoing proxyE determiner vert = liftF (GQOutgoing proxyE einfo vert id)
+  where
+    einfo = toEngineEdgeInformationLocal (Proxy :: Proxy g) proxyE determiner
 
-source :: Edge g e => E g e -> GraphQuery g (V g (EdgeSource g e))
+source
+  :: ( Edge g e
+     , Monad m
+     )
+  => E g e
+  -> GraphQuery g m (V g (EdgeSource g e))
 source edg = liftF (GQSource edg id)
 
-target :: Edge g e => E g e -> GraphQuery g (V g (EdgeTarget g e))
+target
+  :: ( Edge g e
+     , Monad m
+     )
+  => E g e
+  -> GraphQuery g m (V g (EdgeTarget g e))
 target edg = liftF (GQTarget edg id)
 
 adjacentOut
-  :: Edge g e
+  :: ( DeterminesLocalEdge g e d
+     , Monad m
+     )
   => Proxy e
-  -> EngineEdgeInformation g e
+  -> d
   -> V g (EdgeSource g e)
-  -> GraphQuery g (V g (EdgeTarget g e))
-adjacentOut proxyE einfo vert = outgoing proxyE einfo vert >>= target
+  -> GraphQuery g m (V g (EdgeTarget g e))
+adjacentOut proxyE determiner vert = outgoing proxyE determiner vert >>= target
 
 adjacentIn
-  :: Edge g e
+  :: ( DeterminesLocalEdge g e d
+     , Monad m
+     )
   => Proxy e
-  -> EngineEdgeInformation g e
+  -> d
   -> V g (EdgeTarget g e)
-  -> GraphQuery g (V g (EdgeSource g e))
-adjacentIn proxyE einfo vert = incoming proxyE einfo vert >>= source
+  -> GraphQuery g m (V g (EdgeSource g e))
+adjacentIn proxyE determiner vert = incoming proxyE determiner vert >>= source
 
 data GraphMutationF g t where
 
@@ -205,29 +248,47 @@ instance Functor (GraphMutationF g) where
         GMVertex proxyV vi next -> GMVertex proxyV vi (fmap f next)
         GMEdge proxyE ei srcv tgtv next -> GMEdge proxyE ei srcv tgtv (fmap f next)
 
-type GraphMutation g = Free (GraphMutationF g)
+type GraphMutation g = FreeT (GraphMutationF g)
 
 putVertex
-  :: Vertex g v
-  => Proxy v
-  -> EngineVertexInsertion g v
-  -> GraphMutation g (V g v)
-putVertex proxyV vinsert = liftF (GMVertex proxyV vinsert id)
+  :: forall g v m .
+     ( Vertex g v
+     , Monad m
+     )
+  => v
+  -> GraphMutation g m (V g v)
+putVertex v = liftF (GMVertex proxyV vinsert id)
+  where
+    proxyV :: Proxy v
+    proxyV = Proxy
+    proxyG :: Proxy g
+    proxyG = Proxy
+    vinsert :: EngineVertexInsertion g v
+    vinsert = toEngineVertexInsertion proxyG v
 
 putEdge
-  :: Edge g e
-  => Proxy e
-  -> EngineEdgeInsertion g e
+  :: forall g e m .
+     ( Edge g e
+     , Monad m
+     )
+  => e
   -> V g (EdgeSource g e)
   -> V g (EdgeTarget g e)
-  -> GraphMutation g (E g e)
-putEdge proxyE einsert srcv tgtv = liftF (GMEdge proxyE einsert srcv tgtv id)
+  -> GraphMutation g m (E g e)
+putEdge edg srcv tgtv = liftF (GMEdge proxyE einsert srcv tgtv id)
+  where
+    proxyE :: Proxy e
+    proxyE = Proxy
+    proxyG :: Proxy g
+    proxyG = Proxy
+    einsert :: EngineEdgeInsertion g e
+    einsert = toEngineEdgeInsertion proxyG edg
 
 type GraphPatternsF g = GraphQueryF g :+: GraphMutationF g
-type GraphPatterns g = Free (GraphPatternsF g)
+type GraphPatterns g = FreeT (GraphPatternsF g)
 
-query :: GraphQuery g t -> GraphPatterns g t
+query :: Monad m => GraphQuery g m t -> GraphPatterns g m t
 query = injectF
 
-mutation :: GraphMutation g t -> GraphPatterns g t
+mutation :: Monad m => GraphMutation g m t -> GraphPatterns g m t
 mutation = injectF
