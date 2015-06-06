@@ -184,10 +184,13 @@ getVertexProperties id = do
     rows <- rfrelation (Selection selection)
     return (makeProperties rows)
   where
-    selection :: Select VertexPropertyTable '[ KeyColumn, ValueColumn ] '[ '[ IdColumn ] ]
-    selection = Select vertexPropertyTable projection condition
-    projection :: Project '[ KeyColumn, ValueColumn ]
-    projection = keyColumn :+| valueColumn :+| EndProject
+    selection
+      :: Select
+           VertexPropertyTable
+           '[ KeyColumn, ValueColumn ]
+           '[ KeyColumn, ValueColumn ]
+           '[ '[ IdColumn ] ]
+    selection = select condition
     condition :: Condition '[ '[ IdColumn ] ]
     condition = idColumn .==. id .||. false .&&. true
 
@@ -201,10 +204,13 @@ getEdgeProperties id = do
     rows <- rfrelation (Selection selection)
     return (makeProperties rows)
   where
-    selection :: Select EdgePropertyTable '[ KeyColumn, ValueColumn ] '[ '[ IdColumn ] ]
-    selection = Select edgePropertyTable projection condition
-    projection :: Project '[ KeyColumn, ValueColumn ]
-    projection = keyColumn :+| valueColumn :+| EndProject
+    selection
+      :: Select
+           EdgePropertyTable
+           '[ KeyColumn, ValueColumn ]
+           '[ KeyColumn, ValueColumn ]
+           '[ '[ IdColumn ] ]
+    selection = select condition
     condition :: Condition '[ '[ IdColumn ] ]
     condition = idColumn .==. id .||. false .&&. true
 
@@ -220,10 +226,13 @@ getEdgeSourceId id = do
       [ (idField :&| EndRow) ] -> return (fieldValue idField)
       _ -> error "Edge has n /= 1 sources! Wtf?"
   where
-    selection :: Select AdjacencyTable '[ SourceColumn ] '[ '[ IdColumn ] ]
-    selection = Select adjacencyTable projection condition
-    projection :: Project '[ SourceColumn ]
-    projection = sourceColumn :+| EndProject
+    selection
+      :: Select
+           AdjacencyTable
+           '[ SourceColumn ]
+           '[ SourceColumn ]
+           '[ '[ IdColumn ] ]
+    selection = select condition
     condition :: Condition '[ '[ IdColumn ] ]
     condition = idColumn .==. id .||. false .&&. true
 
@@ -239,25 +248,30 @@ getEdgeTargetId id = do
       [ (idField :&| EndRow) ] -> return (fieldValue idField)
       _ -> error "Edge has n /= 1 targets! Wtf?"
   where
-    selection :: Select AdjacencyTable '[ TargetColumn ] '[ '[ IdColumn ] ]
-    selection = Select adjacencyTable projection condition
-    projection :: Project '[ TargetColumn ]
-    projection = targetColumn :+| EndProject
+    selection
+      :: Select
+           AdjacencyTable
+           '[ TargetColumn ]
+           '[ TargetColumn ]
+           '[ '[ IdColumn ] ]
+    selection = select condition
     condition :: Condition '[ '[ IdColumn ] ]
     condition = idColumn .==. id .||. false .&&. true
 
 selectVertexIdsWithProperty
   :: ( )
   => (T.Text, T.Text)
-  -> Select VertexPropertyTable '[ IdColumn ] '[ '[KeyColumn], '[ValueColumn] ]
-selectVertexIdsWithProperty (key, value) = Select tbl prj cond
+  -> Select
+       VertexPropertyTable
+       '[ IdColumn ]
+       '[ IdColumn ]
+       '[ '[KeyColumn], '[ValueColumn] ]
+selectVertexIdsWithProperty (key, value) = select condition
   where
-    tbl :: Table VertexPropertyTable
-    tbl = table (schema Proxy)
-    prj :: Project '[ IdColumn ]
-    prj = projection Proxy
-    cond :: Condition '[ '[KeyColumn], '[ValueColumn] ]
-    cond = keyColumn .==. key .||. false .&&. valueColumn .==. value .||. false .&&. true
+    condition :: Condition '[ '[KeyColumn], '[ValueColumn] ]
+    condition =      keyColumn .==. key .||. false
+                .&&. valueColumn .==. value .||. false
+                .&&. true
 
 selectVertexIdsWithProperties
   :: ( ContainsDatabase db GraphDatabase )
@@ -274,8 +288,8 @@ selectVertexManifest
   => Relation db '[ IdColumn ]
 selectVertexManifest = Selection select
   where
-    select :: Select VertexManifestTable '[ IdColumn ] '[ ]
-    select = Select vertexManifestTable (projection Proxy) true
+    select :: Select VertexManifestTable '[ IdColumn ] '[ IdColumn ] '[ ]
+    select = selectAll
 
 getVertexIdsWithProperties
   :: ( ContainsDatabase db GraphDatabase
@@ -291,24 +305,24 @@ getVertexIdsWithProperties properties = do
 selectEdgeIdsWithProperty
   :: ( )
   => (T.Text, T.Text)
-  -> Select EdgePropertyTable '[ IdColumn ] '[ '[KeyColumn], '[ValueColumn] ]
-selectEdgeIdsWithProperty (key, value) = Select tbl prj cond
+  -> Select
+       EdgePropertyTable
+       '[ IdColumn ]
+       '[ IdColumn ]
+       '[ '[KeyColumn], '[ValueColumn] ]
+selectEdgeIdsWithProperty (key, value) = select condition
   where
-    tbl :: Table EdgePropertyTable
-    tbl = table (schema Proxy)
-    prj :: Project '[ IdColumn ]
-    prj = projection Proxy
-    cond :: Condition '[ '[KeyColumn], '[ValueColumn] ]
-    cond = keyColumn .==. key .||. false .&&. valueColumn .==. value .||. false .&&. true
+    condition :: Condition '[ '[KeyColumn], '[ValueColumn] ]
+    condition =      keyColumn .==. key .||. false
+                .&&. valueColumn .==. value .||. false
+                .&&. true
 
 selectEdgeIdsWithProperties
   :: ( ContainsDatabase db GraphDatabase )
   => [(T.Text, T.Text)]
   -> Relation db '[ IdColumn ]
 selectEdgeIdsWithProperties pairs = case pairs of
-    -- [] -> Selection (selectNone :: Select EdgePropertyTable '[ IdColumn ] '[ '[] ])
-    -- [x] -> Selection (selectEdgeIdsWithProperty x)
-    [] -> Selection (selectAll :: Select EdgeManifestTable '[ IdColumn ] '[])
+    [] -> Selection (selectAll :: Select EdgeManifestTable '[ IdColumn ] '[ IdColumn ] '[])
     x : rest -> Intersection
                   (Selection (selectEdgeIdsWithProperty x))
                   (selectEdgeIdsWithProperties rest)
@@ -327,7 +341,7 @@ selectEdgeIdsWithTarget
   :: ( ContainsDatabase db GraphDatabase )
   => UUID
   -> Relation db '[ IdColumn ]
-selectEdgeIdsWithTarget targetId = Selection (Select tbl prj cond)
+selectEdgeIdsWithTarget targetId = Selection (Select tbl prj prj cond)
   where
     tbl :: Table AdjacencyTable
     tbl = table (schema Proxy)
@@ -340,7 +354,7 @@ selectEdgeIdsWithSource
   :: ( ContainsDatabase db GraphDatabase )
   => UUID
   -> Relation db '[ IdColumn ]
-selectEdgeIdsWithSource sourceId = Selection (Select tbl prj cond)
+selectEdgeIdsWithSource sourceId = Selection (Select tbl prj prj cond)
   where
     tbl :: Table AdjacencyTable
     tbl = table (schema Proxy)
