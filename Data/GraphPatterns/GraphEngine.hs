@@ -117,3 +117,33 @@ class
       -> EngineVertex g srcv
       -> EngineVertex g tgtv
       -> GraphEngineMonad g (EngineEdge g e)
+
+    -- | Alter the local properties of the EngineVertex so that it looks as
+    --   though it were inserted using the EngineVertexInsertion, but maintains
+    --   its adjacency.
+    updateVertex
+      :: Proxy g
+      -> Proxy v
+      -> EngineVertex g v
+      -> EngineVertexInsertion g v
+      -> GraphEngineMonad g (EngineVertex g v)
+
+    updateEdge
+      :: Proxy g
+      -> Proxy e
+      -> EngineEdge g e
+      -> EngineEdgeInsertion g e
+      -> GraphEngineMonad g (EngineEdge g e)
+
+    -- | Must remove the vertex AND all of its incoming and outgoing edges.
+    deleteVertex
+      :: Proxy g
+      -> Proxy v
+      -> EngineVertex g v
+      -> GraphEngineMonad g ()
+
+    deleteEdge
+      :: Proxy g
+      -> Proxy e
+      -> EngineEdge g e
+      -> GraphEngineMonad g ()
